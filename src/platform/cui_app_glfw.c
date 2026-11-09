@@ -212,3 +212,8 @@ double cui__plat_refresh_hz(cui_app *app) {
 }
 
 void cui__plat_gl_release(cui_app *app) { (void)app; }   /* not used: these keep OpenGL */
+
+void cui__plat_maximize(cui_app *app) {
+    cui__glfw *g = cui__g(app);
+    if (g && g->win) glfwMaximizeWindow(g->win);
+}

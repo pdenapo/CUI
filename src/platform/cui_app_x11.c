@@ -727,3 +727,27 @@ void cui__plat_wait(cui_app *app, double timeout) {
         cui__x11_event(app, &ev);
     }
 }
+
+void cui__plat_maximize(cui_app *app) {
+    cui__x11 *x = cui__x(app);
+    if (!x || !x->dpy || !x->win) return;
+
+    Atom wm_state = XInternAtom(x->dpy, "_NET_WM_STATE", False);
+    Atom max_horz = XInternAtom(x->dpy, "_NET_WM_STATE_MAXIMIZED_HORZ", False);
+    Atom max_vert = XInternAtom(x->dpy, "_NET_WM_STATE_MAXIMIZED_VERT", False);
+
+    XEvent e;
+    memset(&e, 0, sizeof e);
+    e.xclient.type = ClientMessage;
+    e.xclient.window = x->win;
+    e.xclient.message_type = wm_state;
+    e.xclient.format = 32;
+    e.xclient.data.l[0] = 1; /* _NET_WM_STATE_ADD */
+    e.xclient.data.l[1] = (long)max_horz;
+    e.xclient.data.l[2] = (long)max_vert;
+    e.xclient.data.l[3] = 1; /* source: application */
+
+    XSendEvent(x->dpy, DefaultRootWindow(x->dpy), False,
+               SubstructureRedirectMask | SubstructureNotifyMask, &e);
+    XFlush(x->dpy);
+}

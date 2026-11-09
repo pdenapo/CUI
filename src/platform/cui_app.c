@@ -313,3 +313,6 @@ bool cui_app_file_dialog(cui_app *app, const cui_file_dialog_opts *opts, char *o
 
 bool cui_app_open_url(const char *url) { return url && *url && cui__plat_open_url(url); }
 
+void cui_app_maximize(cui_app *app) {
+    if (app) cui__plat_maximize(app);
+}

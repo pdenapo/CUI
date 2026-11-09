@@ -433,3 +433,10 @@ double cui__plat_refresh_hz(cui_app *app) {
 }
 
 void cui__plat_gl_release(cui_app *app) { (void)app; }   /* not used: these keep OpenGL */
+
+void cui__plat_maximize(cui_app *app) {
+    CUIPlat *p = cui__p(app);
+    if (!p || !p.window) return;
+    if (!p.window.isZoomed)
+        [p.window zoom:nil];
+}

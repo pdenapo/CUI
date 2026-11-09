@@ -64,4 +64,6 @@ void cui__app_render(cui_app *app);                   /* end frame (if open), re
 void cui__app_live_frame(cui_app *app);               /* run one frame from inside a resize loop */
 void cui__app_set_clipboard_cache(cui_app *app, const char *utf8);
 
+void cui__plat_maximize(cui_app *app);
+
 #endif

@@ -551,3 +551,8 @@ void cui__plat_gl_release(cui_app *app) {
     cui__win32 *w = cui__w(app);
     if (w->glrc) { wglMakeCurrent(NULL, NULL); wglDeleteContext(w->glrc); w->glrc = NULL; }
 }
+
+void cui__plat_maximize(cui_app *app) {
+    cui__win32 *w = cui__w(app);
+    if (w && w->hwnd) ShowWindow(w->hwnd, SW_SHOWMAXIMIZED);
+}

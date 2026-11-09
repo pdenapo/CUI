@@ -225,10 +225,14 @@ bool cui__plat_present_part(cui_app *app, const void *bgra, int w, int h, int st
     (void)app; (void)bgra; (void)w; (void)h; (void)stride; (void)x; (void)y; (void)pw; (void)ph;
     return false;   /* the whole buffer is shown each time */
 }
-
 double cui__plat_refresh_hz(cui_app *app) {
     SDL_DisplayMode m;
     return SDL_GetWindowDisplayMode(cui__s(app)->win, &m) == 0 ? m.refresh_rate : 0;
 }
 
 void cui__plat_gl_release(cui_app *app) { (void)app; }   /* not used: these keep OpenGL */
+
+void cui__plat_maximize(cui_app *app) {
+    cui__sdl *s = cui__s(app);
+    if (s && s->win) SDL_MaximizeWindow(s->win);
+}
