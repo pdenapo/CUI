@@ -468,7 +468,7 @@ function codeView(source, file, line) {
 const order = CAT.categories.flatMap((c) => c.items);
 function sidebarMode() {
   const k = (location.hash.match(/^#\/?([^/?]*)/) || [])[1] || '';
-  return k === 'guide' ? 'guide' : (k === 'c' || k === 'components') ? 'components' : null;
+  return (k === 'guide' || k === 'reference') ? 'guide' : (k === 'c' || k === 'components') ? 'components' : null;
 }
 function renderGuideNav(q) {
   const nav = $('#nav');
@@ -485,6 +485,7 @@ function renderGuideNav(q) {
           .map((x) => h('a', { href: `#/guide/${g.id}/${x.id}`, 'aria-current': g.id === gid && x.id === sec ? 'page' : null }, h('span', { class: 'label' }, x.title)))) : null])));
   }
   out.push(h('div', { class: 'nav-section' }, h('div', { class: 'nav-title' }, 'Reference'),
+    h('a', { href: '#/reference', 'aria-current': /^#\/reference/.test(location.hash) ? 'page' : null }, h('span', { class: 'label' }, 'All functions')),
     h('a', { href: '#/components' }, h('span', { class: 'label' }, 'All components'))));
   nav.replaceChildren(...(out.length ? out : [h('div', { class: 'empty' }, `Nothing matches “${q}”.`)]));
 }
@@ -519,6 +520,8 @@ $('#filter').addEventListener('keydown', (e) => {
 
 // ---------------------------------------------------------------- views
 const main = $('#main');
+// the release these docs describe, beside the name
+if (CAT.version) $('.brand').append(h('span', { class: 'brand-ver', title: `These docs describe CUI ${CAT.version}` }, CAT.version));
 function setNav(which) {
   const nav = $('#topnav');
   nav.querySelectorAll('a').forEach((a) => a.setAttribute('aria-current', a.dataset.nav === which ? 'page' : 'false'));
@@ -585,9 +588,9 @@ function installBlock() {
 
 const FACTS = [
   ['0.1 to 0.25 ms a frame', 'A full screen builds, lays out and paints in a fraction of a millisecond. An idle app uses no CPU.'],
-  ['About 250 KB', 'That is a complete app. CUI has no dependencies, and the library is one C99 codebase.'],
+  ['About 250 KB', 'That is a complete app, window and fonts included. CUI draws its own components, so there is no browser, no runtime and no dependency to ship.'],
   ['Win32, Cocoa and X11', 'Or SDL2 and GLFW, drawn with OpenGL or the software renderer. The core only emits triangles, so your own renderer works too.'],
-  ['Keyboard and reduced motion', 'Every component works from the keyboard and every animation has a reduced motion path. Text meets 4.5:1 contrast.'],
+  ['Keyboard and reduced motion', 'Controls take Tab, Enter, Space and the arrow keys, and each component page lists its keys. Every animation has a reduced motion path, and text meets 4.5:1 contrast.'],
 ];
 const ART = 'img/tetons.jpg';
 
@@ -603,7 +606,7 @@ const C_LOGO = `<svg class="c-logo" viewBox="-14 -14 388 432" role="img" aria-la
 </g></svg>`;
 // the landing page: the hero's controls, the showcase, the bento and the
 // playground are all the library itself, compiled to WebAssembly
-const STRIP = [['~160', 'components'], ['~250 KB', 'a complete app'], ['< 0.25 ms', 'per frame'], ['Win · Mac · Linux', 'one C99 codebase'], ['0', 'dependencies']];
+const STRIP = [['~190', 'components'], ['~250 KB', 'a complete app'], ['< 0.25 ms', 'per frame'], ['Win · Mac · Linux · Web', 'one C99 codebase'], ['0', 'dependencies']];
 const SHOWCASE = [['stage-mosaic', 'Overview', 'layers'], ['app-chrome', 'Editor', 'window'], ['hero-data', 'Data', 'table'],
                   ['hero-plan', 'Planning', 'kanban'], ['hero-ai', 'Assistant', 'message'], ['hero-charts', 'Charts', 'chart']];
 const BENTO = [
@@ -767,7 +770,7 @@ function viewHome() {
       h('h1', { class: 'hero-title', 'aria-label': 'Native UI components for C' },
         ...['Native', 'UI', 'components', 'for'].map((w) => h('span', { class: 'hw' }, w)),
         h('span', { class: 'hw hw-logo', html: C_LOGO })),
-      h('p', { class: 'lede' }, 'Spring motion and full keyboard support, from one C99 codebase.'),
+      h('p', { class: 'lede' }, 'About 190 components, compiled to machine code with no browser or runtime inside. Windows, macOS, Linux and the web, from one C99 codebase.'),
       h('div', { class: 'hero-actions' },
         h('a', { class: 'btn primary', href: '#/guide/getting-started', html: 'Get started' + I.arrow }),
         h('a', { class: 'btn', href: '#/components' }, 'Browse components')),
@@ -1034,6 +1037,20 @@ function optionsBlock(it) {
     many ? null : [' Declared as ', ghLink('include/cui/cui.h', it.options[0].line, it.options[0].struct), ' in cui.h.'])];
 }
 
+// the structs a component's functions take and return, so the page says what to fill in and read back
+function typesBlock(it) {
+  const role = { data: 'You fill this in', result: 'Returned' };
+  return it.types.map((t) => h('div', { class: 'opt-block' },
+    h('h3', { class: 'opt-fn' }, h('code', {}, t.struct), h('span', { class: 'opt-struct' }, role[t.role] || '', ' · ', ghLink('include/cui/cui.h', t.line, 'cui.h'))),
+    h('div', { class: 'opt-scroll' }, h('table', { class: 'opt-table' },
+      h('thead', {}, h('tr', {}, h('th', {}, 'Field'), h('th', {}, 'Type'), h('th', {}, 'Description'))),
+      h('tbody', {}, t.fields.map((f) => h('tr', {},
+        h('td', {}, h('code', {}, f.name)),
+        h('td', { class: 'opt-type' }, h('code', {}, f.type)),
+        h('td', { class: 'opt-doc', html: f.doc || '' })))))),
+    t.enums.map((e) => h('p', { class: 'opt-caption' }, h('code', {}, e.name), ': ', e.values.flatMap((v, i) => (i ? [', ', h('code', {}, v)] : [h('code', {}, v)]))))));
+}
+
 function viewItem(id, sec) {
   const it = CAT.items[id];
   if (!it) return viewMissing();
@@ -1081,10 +1098,17 @@ function viewItem(id, sec) {
 
   const { usage, rest } = splitDoc(it);
   const docEl = (nodes) => { const d = h('div', { class: 'doc' }); d.append(...nodes); d.querySelectorAll('pre.code code').forEach((c) => { c.innerHTML = highlight(c.textContent); }); addCopy(d); return d; };
-  if (usage.length) section('usage', 'Usage', docEl(usage));
+  const program = it.program ? h('details', { class: 'program' }, h('summary', {}, 'Complete program'),
+    h('p', { class: 'opt-caption' }, 'The example above as a whole program: save it as ', h('code', {}, 'main.c'), ' and build it as in ', h('a', { href: '#/guide/getting-started' }, 'Getting started'), '.'),
+    docEl([h('pre', { class: 'code', 'data-lang': 'c' }, h('code', {}, it.program))])) : null;
+  if (usage.length) section('usage', 'Usage', docEl(usage), program);
+  else if (program) section('usage', 'Usage', program);
   if (rest.length) section('behavior', usage.length ? 'Behavior' : 'Overview', docEl(rest));
   if (it.keyboard?.length) section('keyboard', 'Keyboard', h('ul', { class: 'kbd-list' }, it.keyboard.map((k) => h('li', { html: k }))));
+  else if (it.keyboard_note) section('keyboard', 'Keyboard', h('p', { class: 'kbd-note', html: it.keyboard_note }));
+  else if (it.display_only) section('keyboard', 'Keyboard', h('p', { class: 'kbd-note' }, 'This component only displays: there is nothing to focus or press.'));
   if (it.options?.length) section('options', 'Options', ...optionsBlock(it));
+  if (it.types?.length) section('types', 'Data and results', ...typesBlock(it));
   const rel = (it.related || []).map((r) => CAT.items[r]).filter(Boolean);
   if (rel.length) section('related', 'Related', h('div', { class: 'related-grid' }, rel.map((r) => h('a', { class: 'rel-card', href: `#/c/${r.id}` },
     h('span', { class: 'rel-title' }, r.title, newBadge(r.id)), h('span', { class: 'rel-text' }, r.summary), h('span', { class: 'rel-go', html: I.arrow })))));
@@ -1191,7 +1215,9 @@ function sceneLabel(s, it) {
 function pageText(it) {
   const tmp = h('div', { html: it.html });
   tmp.querySelectorAll('pre').forEach((p) => { p.textContent = '\n```c\n' + p.textContent.trim() + '\n```\n'; });
-  return `# ${it.title}\n\n${it.summary || ''}\n\n${tmp.innerText.trim()}\n`;
+  const types = (it.types || []).map((t) => `\n## ${t.struct} (${t.role === 'result' ? 'returned' : 'you fill this in'})\n\n` +
+    t.fields.map((f) => `- ${f.type} ${f.name}${f.doc ? ': ' + h('span', { html: f.doc }).textContent : ''}`).join('\n') + '\n').join('');
+  return `# ${it.title}\n\n${it.summary || ''}\n\n${tmp.innerText.trim()}\n${types}`;
 }
 
 function viewShowcase() {
@@ -1274,6 +1300,48 @@ function viewMissing() {
 }
 
 // the changelog: CHANGELOG.md, one section per release, newest first
+// every public function, from the headers: a signature, the header's comment, and the page that explains it
+function viewReference(target) {
+  setNav('guide');
+  const ref = CAT.reference || [];
+  const count = ref.reduce((n, s) => n + s.fns.length, 0);
+  const filter = h('input', { class: 'ref-filter', type: 'search', placeholder: `Filter ${count} functions`, 'aria-label': 'Filter the functions', autocomplete: 'off' });
+  const body = h('article', { class: 'doc guide reference' }, ref.map((s) => h('section', { id: `s-${s.id}`, class: 'ref-sec' },
+    h('h2', {}, s.title),
+    s.fns.map((f) => h('div', { class: 'ref-fn', id: `f-${f.name}`, 'data-name': f.name },
+      h('pre', { class: 'code ref-sig', 'data-lang': 'c' }, h('code', { html: highlight(f.sig) })),
+      h('div', { class: 'ref-meta' },
+        f.doc ? h('span', { class: 'ref-doc', html: f.doc }) : null,
+        f.page ? h('a', { href: `#/c/${f.page}` }, CAT.items[f.page].title) : s.guide ? h('a', { href: `#/guide/${s.guide}` }, `${CAT.guides.find((g) => g.id === s.guide).title} guide`) : null,
+        ghLink(s.header, f.line, h('code', {}, `${s.header.split('/').pop()}:${f.line}`))))))));
+  const none = h('p', { class: 'empty', hidden: true }, 'No function matches.');
+  filter.addEventListener('input', () => {
+    const q = filter.value.trim().toLowerCase(); let any = false;
+    body.querySelectorAll('.ref-sec').forEach((sec) => {
+      let shown = 0;
+      sec.querySelectorAll('.ref-fn').forEach((el) => { const on = !q || el.dataset.name.includes(q) || el.textContent.toLowerCase().includes(q); el.hidden = !on; shown += on; });
+      sec.hidden = !shown; any = any || shown > 0;
+    });
+    none.hidden = any;
+  });
+  const toc = h('nav', { class: 'toc', 'aria-label': 'Sections' }, h('div', { class: 'toc-title' }, 'Sections'),
+    ref.map((s) => h('a', { href: `#/reference/${s.id}`, 'data-sec': s.id }, s.title)));
+  const page = h('div', { class: 'page guide-page' },
+    h('div', { class: 'guide-main' },
+      h('h1', {}, 'Function reference'),
+      h('p', { class: 'lede' }, `Every public function of CUI ${CAT.version || ''}, in the order of the headers. A name ending in "..." takes named options: see its component's page for them.`),
+      filter, none, body),
+    toc);
+  if (target) setTimeout(() => refScroll(target, false));
+  return page;
+}
+function refScroll(target, smooth) {
+  const el = document.getElementById(`f-${target}`) || document.getElementById(`s-${target}`);
+  if (!el) return false;
+  window.scrollTo({ top: el.getBoundingClientRect().top + scrollY - 84, behavior: smooth && !prefs.reducedMotion ? 'smooth' : 'auto' });
+  if (el.classList.contains('ref-fn')) { el.classList.add('ref-hit'); setTimeout(() => el.classList.remove('ref-hit'), 1600); }
+  return true;
+}
 function viewChangelog(sec) {
   setNav('changelog');
   const cl = CAT.changelog || { lede: '', releases: [] };
@@ -1321,6 +1389,7 @@ function route() {
   else if (kind === 'accents') view = viewAccents();
   else if (kind === 'apps') view = viewApps();
   else if (kind === 'changelog') view = viewChangelog(id ? decodeURIComponent(id) : '');
+  else if (kind === 'reference') view = viewReference(id ? decodeURIComponent(id) : '');
   else if (kind === 'app') view = viewApp(decodeURIComponent(id));
   else view = viewMissing();
   document.body.classList.toggle('app-mode', kind === 'app');
@@ -1333,7 +1402,8 @@ function route() {
   renderNav($('#filter').value);
   const it = kind === 'c' && CAT.items[decodeURIComponent(id.split('/')[0])];
   const gd = kind === 'guide' && CAT.guides.find((g) => g.id === (id || 'getting-started').split('/')[0]);
-  document.title = it ? `${it.title} · CUI` : gd ? `${gd.title} · CUI` : kind === 'components' ? 'Components · CUI' : kind === 'changelog' ? 'Changelog · CUI' : 'CUI';
+  document.title = it ? `${it.title} · CUI` : gd ? `${gd.title} · CUI` : kind === 'components' ? 'Components · CUI' : kind === 'changelog' ? 'Changelog · CUI' : kind === 'showcase' ? 'Showcase · CUI' : kind === 'apps' ? 'Apps · CUI' : kind === 'reference' ? 'Function reference · CUI'
+    : kind === 'app' && CAT.apps.find((a) => a.id === id) ? `${CAT.apps.find((a) => a.id === id).title} app · CUI` : kind && kind !== 'home' ? 'CUI' : 'CUI: native UI components for C';
 }
 let lastRoute = '';
 window.addEventListener('hashchange', () => {
@@ -1342,6 +1412,8 @@ window.addEventListener('hashchange', () => {
     const el = document.getElementById(`s-${m[2]}`);
     if (el) { window.scrollTo({ top: el.getBoundingClientRect().top + scrollY - 72, behavior: prefs.reducedMotion ? 'auto' : 'smooth' }); lastRoute = location.hash; renderNav($('#filter').value); return; }
   }
+  const rm = location.hash.match(/^#\/reference\/(.+)$/);
+  if (rm && /^#\/reference/.test(lastRoute) && refScroll(decodeURIComponent(rm[1]), true)) { lastRoute = location.hash; return; }
   const lm = location.hash.match(/^#\/changelog\/(.+)$/);
   if (lm && /^#\/changelog/.test(lastRoute)) {
     const el = document.getElementById(`s-${decodeURIComponent(lm[1])}`);
@@ -1397,23 +1469,53 @@ $('#settings-open').addEventListener('click', (e) => (openSettings.close ? close
 $('#theme-toggle').addEventListener('click', () => { prefs.theme = isDark() ? 'light' : 'dark'; savePrefs(); applyTheme(); });
 
 // ---------------------------------------------------------------- search palette
+// Everything the palette searches, built once. `hay` is what a page is about (its title,
+// description and functions) and ranks first; `body` is the rest of its text, so a word
+// that only appears in a guide's prose or an option's name still finds its page.
+let searchEntries = null;
+function plainText(html) { const d = document.createElement('div'); d.innerHTML = html || ''; return d.textContent.replace(/\s+/g, ' ').trim(); }
+function buildSearch() {
+  const optText = (it) => [...it.options.flatMap((o) => [o.struct, ...o.fields.flatMap((f) => [f.name, plainText(f.doc)])]),
+    ...(it.types || []).flatMap((t) => [t.struct, ...t.fields.flatMap((f) => [f.name, plainText(f.doc)]), ...t.enums.flatMap((e) => [e.name, ...e.values])])].join(' ');
+  const E = (href, title, sub, group, hay, body, minor) => ({ href, title, sub, group, minor, hay: `${title} ${hay}`.toLowerCase(), body, lbody: body.toLowerCase() });
+  return [
+    ...CAT.guides.flatMap((g) => [E(`#/guide/${g.id}`, g.title, g.lede, 'Guide', g.lede, plainText(g.intro)),
+      ...g.sections.map((x) => E(`#/guide/${g.id}/${x.id}`, x.title, g.title, 'Guide', g.title, plainText(x.html), true))]),
+    ...order.map((id) => { const it = CAT.items[id]; return E(`#/c/${id}`, it.title, it.summary, CAT.categories.find((c) => c.id === it.category).title,
+      `${it.summary} ${it.apis.join(' ')} ${it.scenes.join(' ')}`, `${plainText(it.html)} ${plainText(it.keyboard.join(' '))} ${plainText(it.keyboard_note)} ${optText(it)}`); }),
+    ...CAT.showcase.map((x) => E('#/showcase', x.title, x.summary, 'Showcase', `${x.summary} ${x.id}`, '')),
+    ...CAT.apps.map((a) => E(`#/app/${a.id}`, `${a.title} app`, a.summary, 'Apps', `${a.summary} app`, '')),
+    ...(CAT.reference || []).flatMap((s) => s.fns.map((f) => E(`#/reference/${f.name}`, f.name, plainText(f.doc) || f.sig, 'Function', f.sig, plainText(f.doc), true))),
+    ...CAT.changelog.releases.map((r) => E(`#/changelog/${r.id}`, `Changelog: ${r.title}`, r.date, 'Changelog', '', plainText(r.html), true)),
+  ];
+}
+// the words around the first place a term appears, to show why a page matched
+function snippet(e, terms) {
+  const at = Math.min(...terms.map((t) => e.lbody.indexOf(t)).filter((i) => i >= 0));
+  if (!isFinite(at)) return e.sub;
+  let a = Math.max(0, at - 48), b = Math.min(e.body.length, at + 72);
+  if (a > 0) a = e.body.indexOf(' ', a) + 1;
+  if (b < e.body.length) b = e.body.lastIndexOf(' ', b);
+  return `${a > 0 ? '… ' : ''}${e.body.slice(a, b)}${b < e.body.length ? ' …' : ''}`;
+}
 function openSearch() {
   if ($('.scrim')) return;
-  const entries = [
-    ...CAT.guides.flatMap((g) => [{ href: `#/guide/${g.id}`, title: g.title, sub: g.lede, group: 'Guide', hay: `${g.title} ${g.lede}`.toLowerCase() },
-      ...g.sections.map((x) => ({ href: `#/guide/${g.id}/${x.id}`, title: x.title, sub: g.title, group: 'Guide', hay: `${x.title} ${g.title}`.toLowerCase(), minor: true }))]),
-    ...order.map((id) => { const it = CAT.items[id]; return { href: `#/c/${id}`, title: it.title, sub: it.summary, group: CAT.categories.find((c) => c.id === it.category).title, hay: `${it.title} ${it.summary} ${it.apis.join(' ')} ${it.scenes.join(' ')}`.toLowerCase() }; }),
-    ...CAT.showcase.map((s) => ({ href: '#/showcase', title: s.title, sub: s.summary, group: 'Showcase', hay: `${s.title} ${s.summary} ${s.id}`.toLowerCase() })),
-    ...CAT.apps.map((a) => ({ href: `#/app/${a.id}`, title: `${a.title} app`, sub: a.summary, group: 'Apps', hay: `${a.title} ${a.summary} app`.toLowerCase() })),
-  ];
+  const entries = searchEntries || (searchEntries = buildSearch());
   const input = h('input', { placeholder: 'Search the guide, components and functions', 'aria-label': 'Search' });
   const list = h('div', { class: 'palette-list', role: 'listbox' });
   let results = [], sel = 0;
   const render = () => {
     const q = input.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    results = entries.filter((e) => (q.length || !e.minor) && q.every((t) => e.hay.includes(t)));
-    if (q.length) results.sort((a, b) => (b.title.toLowerCase().startsWith(q[0]) - a.title.toLowerCase().startsWith(q[0])));
-    results = results.slice(0, 60);
+    // a page that is about the words comes before a page that only mentions them
+    const score = (e) => {
+      const title = e.title.toLowerCase(), phrase = q.join(' ');
+      if (q.every((t) => e.hay.includes(t))) return (title === phrase ? 400 : title.startsWith(q[0]) ? 300 : q.every((t) => title.includes(t)) ? 250 : 200) - (e.minor ? 20 : 0);
+      if (q.every((t) => e.hay.includes(t) || e.lbody.includes(t))) return (e.lbody.includes(phrase) ? 100 : 50) + 30 * q.filter((t) => title.includes(t)).length - (e.minor ? 0 : 5);
+      return 0;
+    };
+    results = entries.filter((e) => (q.length || !e.minor)).map((e) => ({ e, s: q.length ? score(e) : 1 })).filter((r) => r.s > 0);
+    if (q.length) results.sort((a, b) => b.s - a.s);
+    results = results.slice(0, 60).map((r) => (r.s < 200 && q.length ? { ...r.e, sub: snippet(r.e, q) } : r.e));
     sel = Math.min(sel, Math.max(0, results.length - 1));
     list.replaceChildren();
     let group = null;

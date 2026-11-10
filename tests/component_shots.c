@@ -2479,7 +2479,7 @@ static void mosaic_metrics(cui_ctx *ui) {
     static const float s1[] = { 268, 255, 262, 249, 251, 240, 236, 229, 231, 222 };
     static const float s2[] = { 3, 4, 3, 5, 4, 6, 5, 6, 7, 7 };
     cui_box(ui, .dir = CUI_GRID, .columns = 2, .gap = 20, .width = CUI_FILL) {
-        cui_metric(ui, "Median build, 30 days", "3m 42s", .delta = -17.6f, .delta_label = "-17.6%", .lower_is_better = true, .spark = s1, .spark_count = 10, .icon = CUI_ICON_CLOCK);
+        cui_metric(ui, "Median build", "3m 42s", .delta = -17.6f, .delta_label = "-17.6%", .lower_is_better = true, .spark = s1, .spark_count = 10, .icon = CUI_ICON_CLOCK);
         cui_metric(ui, "Flaky tests", "7", .delta = 2, .delta_label = "+2 this week", .lower_is_better = true, .spark = s2, .spark_count = 10, .icon = CUI_ICON_TRIANGLE_ALERT);
     }
 }

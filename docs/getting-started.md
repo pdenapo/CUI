@@ -1,6 +1,6 @@
 # Getting started
 
-This guide takes you from an empty folder to a working window, then explains the ideas you need to build real screens.
+This guide takes you from an empty folder to a working window, then explains the ideas you need to build real screens. When the window is up, the [tutorial](tutorial.md) builds a small complete app in it.
 
 ## 1. Get CUI
 
@@ -24,7 +24,7 @@ cmake --build build -j
 ./build/examples/hello                 # Windows with Visual Studio: build\examples\Release\hello.exe
 ```
 
-`build/examples/` also holds the gallery, which shows every component, and complete apps (mail, notes, music, a dashboard). If something fails, see [Troubleshooting](#troubleshooting).
+`build/examples/` also holds the gallery, which shows every component, and complete apps (mail, notes, music, a dashboard). To look before you build, each [release](https://github.com/yappologistic/CUI/releases) has these apps ready to run for Windows, macOS and Linux. If something fails, see [Troubleshooting](#troubleshooting).
 
 ### With CMake (recommended)
 
@@ -35,31 +35,38 @@ project(my_app C)
 add_subdirectory(CUI)
 add_executable(my_app main.c)
 target_link_libraries(my_app PRIVATE cui::cui)
+cui_app_target(my_app)
 ```
 
-Or fetch it at configure time:
+Or fetch a release at configure time:
 
 ```cmake
 include(FetchContent)
-FetchContent_Declare(cui GIT_REPOSITORY https://github.com/yappologistic/CUI.git GIT_TAG master)
+FetchContent_Declare(cui GIT_REPOSITORY https://github.com/yappologistic/CUI.git GIT_TAG v1.3.1)
 FetchContent_MakeAvailable(cui)
 target_link_libraries(my_app PRIVATE cui::cui)
+cui_app_target(my_app)
 ```
 
-On Windows, mark GUI apps with `WIN32` (`add_executable(my_app WIN32 main.c)`) so no console window opens. Keep `int main(void)`; with MSVC add `/ENTRY:mainCRTStartup` to the link options (see `examples/CMakeLists.txt`).
+`GIT_TAG` names a [release](https://github.com/yappologistic/CUI/releases), so your build does not change under you. `master` works too and is the newest code.
+
+`cui_app_target` sets up the executable the way a window app wants it. On Windows no console window opens and `int main(void)` stays the entry point. In release builds the linker keeps only the library code your app calls. That last part is what makes apps small: the first window below is about 250 KB with `-DCMAKE_BUILD_TYPE=MinSizeRel` and about 320 KB with `Release` (Linux, GCC, stripped), against about 470 KB without the call.
+
+An installed CUI (`cmake --install build`) works the same way through `find_package(cui REQUIRED)`.
 
 ### Without CMake
 
-Compile every `.c` file in `src/`, plus `src/render/*.c`, `src/platform/cui_app.c` and the backend for your platform:
+Compile every `.c` file in `src/`, plus `src/render/*.c`, `src/platform/cui_app.c`, `src/platform/cui_dialogs.c` and the backend for your platform:
 
 | Platform | Backend file | Link with |
 |---|---|---|
-| Windows | `src/platform/cui_app_win32.c` | `user32 gdi32 opengl32 shell32 imm32 dwmapi` |
+| Windows | `src/platform/cui_app_win32.c` | `user32 gdi32 opengl32 shell32 imm32 dwmapi comdlg32 ole32` |
 | macOS | `src/platform/cui_app_cocoa.m` (compile with `-fobjc-arc`) | `-framework Cocoa -framework QuartzCore -framework OpenGL` |
 | Linux | `src/platform/cui_app_x11.c` | `-lX11 -ldl -lm -lpthread` |
 
 ```sh
-cc -std=c99 -O2 -Iinclude main.c src/*.c src/render/*.c src/platform/cui_app.c src/platform/cui_app_x11.c \
+cc -std=c99 -O2 -Iinclude main.c src/*.c src/render/*.c \
+   src/platform/cui_app.c src/platform/cui_dialogs.c src/platform/cui_app_x11.c \
    -lX11 -ldl -lm -lpthread -o my_app
 ```
 
@@ -70,9 +77,16 @@ For a build system other than CMake, or to vendor CUI into a large codebase, use
 - `cui.h` and `cui.c`: add `cui.c` to your build and include `cui.h`, as with SQLite.
 - `cui_single.h`: one header in the style of the stb libraries. Include it anywhere; in exactly one `.c` file, `#define CUI_IMPLEMENTATION` first, and include it before any system header there.
 
+**The includes differ.** This guide writes `#include <cui/cui.h>` and `#include <cui/cui_app.h>`. With the single-file distribution both are one header beside your code, so write `#include "cui.h"` (or `"cui_single.h"`) in their place and leave the second line out.
+
+`cui.c` is the whole library, about 74,000 lines, and takes around half a minute to compile. Compile it once and link the object file; your own files then build in a moment:
+
 ```sh
-cc -std=c99 -O2 main.c cui.c -lX11 -ldl -lm -lpthread -o my_app      # Linux; other systems link as in the table above
+cc -std=c99 -Os -ffunction-sections -fdata-sections -c cui.c -o cui.o                 # once
+cc -std=c99 -Os main.c cui.o -Wl,--gc-sections -s -lX11 -ldl -lm -lpthread -o my_app   # Linux; other systems link as in the table above
 ```
+
+Those flags are what keep the app small. `-ffunction-sections -fdata-sections` with `-Wl,--gc-sections` lets the linker drop the components you do not use, and `-s` strips symbols: the first window below comes to about 265 KB. Compiling and linking everything in one plain `cc -O2 main.c cui.c` works too, and gives about 1.6 MB, because every component stays in. On macOS use `-Wl,-dead_strip` instead of `-Wl,--gc-sections`; with MSVC, `/Gy` and `/link /OPT:REF /OPT:ICF`.
 
 The window layer for your system is picked by the preprocessor. Before the implementation, `CUI_NO_APP` leaves the window layer out (bring your own window and renderer), `CUI_PLATFORM_SDL2` or `CUI_PLATFORM_GLFW` uses SDL2 or GLFW instead, `CUI_NO_DEFAULT_FONTS` and `CUI_NO_STB_IMAGE` leave out the fonts and image loading, and `CUI_TEXT_SHAPING` adds Arabic-script shaping. On macOS the window layer is Objective-C: compile `cui.c` with `-x objective-c -fobjc-arc`, or define `CUI_NO_APP`.
 
@@ -169,7 +183,7 @@ Every component that has options takes them as named arguments after the require
 cui_button(ui, "Export", .icon = CUI_ICON_DOWNLOAD, .size = CUI_SIZE_SM, .tooltip = "Export as CSV");
 ```
 
-Under the hood this is a C99 compound literal: `cui_button(ui, label, ...)` expands to `cui_button_ex(ui, label, &(cui_button_opts){ ... })`. From C++ (C++11 or later; the headers are `extern "C"`), or if you want to build options at runtime, call the `_ex` function with a filled struct. C++20 designated initializers make that nearly as short.
+Under the hood this is a C99 compound literal: `cui_button(ui, label, ...)` expands to `cui_button_ex(ui, label, &(cui_button_opts){ ... })`. If you want to build options at runtime, call the `_ex` function with a filled struct. C++ always does: the named arguments are C99, so from C++ you call the `_ex` functions (see [From C++](integration.md#from-c)).
 
 ## 5. Containers
 
@@ -233,7 +247,7 @@ For unit tests, skip the window entirely: create a context with the software ren
 
 ## Run in the browser
 
-CUI compiles to WebAssembly with plain clang: no Emscripten and no downloads. The [live docs](https://yappologistic.github.io/CUI/) are built this way, and your app can be too, unchanged, as long as its `main` hands its frame function to `cui_app_run` (as in the example above) instead of running its own loop. You need clang with the `wasm32` target, `wasm-ld`, `llvm-ar` and python3 (on Debian or Ubuntu: `sudo apt install clang lld llvm python3`).
+CUI compiles to WebAssembly with plain clang: no Emscripten and no downloads. The [live docs](https://yappologistic.github.io/CUI/) are built this way, and your app can be too, unchanged, as long as its `main` is `int main(void)` and hands its frame function to `cui_app_run` (as in the example above) instead of running its own loop. You need clang with the `wasm32` target, `wasm-ld`, `llvm-ar` and python3 (on Debian or Ubuntu: `sudo apt install clang lld llvm python3`).
 
 ```sh
 web/tools/build.sh app path/to/my_app.c    # more .c files may follow
@@ -253,7 +267,10 @@ Android and iOS are not supported yet. Each needs its own platform layer (an `an
 | No window on Wayland without XWayland | Configure with `-DCUI_PLATFORM=sdl2` or `-DCUI_PLATFORM=glfw` (install `libsdl2-dev` or `libglfw3-dev`) |
 | Black or empty window, OpenGL errors (virtual machines, remote desktop, old drivers) | CUI falls back to its software renderer when OpenGL 3.3 cannot start; to force it, run with `CUI_RENDERER=software` |
 | Everything looks too small or too large | Run with `CUI_SCALE=1.5` (or any scale) to override what the display reports |
-| A console window opens next to the app (Windows) | Use `add_executable(my_app WIN32 main.c)`, and with MSVC link with `/ENTRY:mainCRTStartup` |
+| A console window opens next to the app (Windows) | Call `cui_app_target(my_app)` in your `CMakeLists.txt`. Without CMake: `-mwindows` (MinGW), or `/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup` (MSVC) |
+| `cui/cui.h: No such file or directory` with the single-file distribution | Write `#include "cui.h"` in place of `<cui/cui.h>` and `<cui/cui_app.h>` (see [One file](#one-file)) |
+| The app is over 1 MB | The linker kept every component. Call `cui_app_target(my_app)` and build `Release` or `MinSizeRel`; without CMake see the flags under [One file](#one-file) |
+| `cui.c` takes half a minute to compile | Compile it once to `cui.o` and link that (see [One file](#one-file)) |
 | `cui_app_cocoa.m` fails to compile (macOS, without CMake) | Compile it with `-fobjc-arc` and link the Cocoa, QuartzCore and OpenGL frameworks |
 | Text is missing | With `CUI_DEFAULT_FONTS=OFF` there are no built-in fonts: load your own (see [Theming](theming.md)) |
 

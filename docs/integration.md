@@ -134,7 +134,7 @@ CUI is built to stay small. Measured with GCC, `-DCMAKE_BUILD_TYPE=MinSizeRel`, 
 |---|---|
 | Whole library (about 190 components, both renderers, X11 backend, fonts) | about 1,050 KB |
 | of which embedded fonts (Inter, Geist, Geist Mono, 168 Lucide icons) | 95 KB, compressed |
-| `examples/hello` on Linux, whole executable | about 240 KB |
+| `examples/hello` on Linux, whole executable | about 250 KB |
 | `examples/hello.exe` on Windows (MinGW, linked with `-flto`), whole executable | about 300 KB |
 | `examples/assistant`, an AI chat app | about 350 KB |
 | `examples/gallery`, every component in use | about 1,010 KB |
@@ -155,6 +155,37 @@ Going smaller:
 | `-DCUI_DEFAULT_FONTS=OFF` (load your own fonts with `cui_font_load_file`) | 95 KB plus the decoder |
 | `-DCUI_STB_IMAGE=OFF` (upload pixels yourself with `cui_image_create`) | about 24 KB |
 | `-DCUI_WITH_APP=OFF` (core only, for use inside your engine) | the window layer and dialogs |
+
+## From C++
+
+The headers are `extern "C"` and compile as C++11 or later, so CUI links into a C++ program like any C library. One thing differs: the named-argument calls (`cui_button(ui, "Save", .variant = ...)`) and the block macros (`cui_column(ui) { ... }`) are C99 and are not defined in C++. Call the function behind each one instead: the `_ex` function with an options struct, and the `_begin` and `_end` pair.
+
+```cpp
+#include <cui/cui.h>
+#include <cui/cui_app.h>
+
+static void frame(cui_ctx *ui, void *) {
+    cui_box page{};
+    page.pad = 24;
+    page.gap = 12;
+    cui_column_begin(ui, &page);
+    cui_heading(ui, "Welcome", 2);
+    static bool notify = true;
+    cui_switch_ex(ui, "Email me when a build fails", &notify, nullptr);
+    cui_button_opts save{};
+    save.variant = CUI_BUTTON_PRIMARY;
+    if (cui_button_ex(ui, "Save", &save)) { /* ... */ }
+    cui_box_end(ui);
+}
+
+int main() {
+    cui_app_desc desc{};
+    desc.title = "My app";
+    return cui_app_run(&desc, frame, nullptr);
+}
+```
+
+Pass `nullptr` for the options to take every default. With C++20 the struct can be written in place, close to the C form: `cui_button_opts save{ .variant = CUI_BUTTON_PRIMARY };` (fields in the order the header declares them; GCC's `-Wextra` then warns about the fields you left out, which `-Wno-missing-field-initializers` turns off). Every component's page on the site names its `_ex` function and lists the struct's fields. CUI's own tests compile this example as C++ on every push (`tests/cpp_compat.cpp`).
 
 ## Text in other languages
 

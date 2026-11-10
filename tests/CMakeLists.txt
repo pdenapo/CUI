@@ -45,7 +45,11 @@ add_test(NAME cui_test_inflate COMMAND cui_test_inflate)
 
 # Random input against the example apps (their sources are included directly)
 if(CUI_WITH_APP)
-    foreach(app tracker music finance dashboard assistant)
+    # the tutorial's app does what the tutorial says
+    add_executable(cui_test_todo test_todo.c)
+    target_link_libraries(cui_test_todo PRIVATE cui::cui)
+    add_test(NAME cui_test_todo COMMAND cui_test_todo ${CMAKE_CURRENT_BINARY_DIR})
+    foreach(app tracker music finance dashboard assistant todo)
         add_executable(cui_fuzz_${app} fuzz_app.c)
         target_compile_definitions(cui_fuzz_${app} PRIVATE FUZZ_APP="../examples/${app}.c")
         target_link_libraries(cui_fuzz_${app} PRIVATE cui::cui)

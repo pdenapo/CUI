@@ -56,8 +56,8 @@ extern "C" {
 
 #define CUI_VERSION_MAJOR 1
 #define CUI_VERSION_MINOR 3
-#define CUI_VERSION_PATCH 0
-#define CUI_VERSION_STRING "1.3.0"
+#define CUI_VERSION_PATCH 1
+#define CUI_VERSION_STRING "1.3.1"
 
 #ifndef CUI_API
 #  if defined(_WIN32) && defined(CUI_SHARED) && defined(CUI_BUILDING)

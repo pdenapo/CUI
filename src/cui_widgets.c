@@ -898,6 +898,8 @@ void cui_metric_ex(cui_ctx *ui, const char *label, const char *value, const cui_
     cui__close(ui);
     int vr = cui__node_new(ui, 0);
     ui->nodes[vr].dir = CUI_ROW; ui->nodes[vr].align = CUI_ALIGN_END; ui->nodes[vr].gap = 10;
+    ui->nodes[vr].flags |= CUI_NF_ROW_WRAP;   /* on a narrow card the change goes under the value instead of both being cut */
+    ui->nodes[vr].w = CUI_FILL;
     cui__open(ui, vr);
     int vt = cui__text_node(ui, value, -1, CUI_FONT_DISPLAY, cui__fs(ui, 28), CUI_C(ui, FOREGROUND), false);
     ui->nodes[vt].line_height = 1.1f;

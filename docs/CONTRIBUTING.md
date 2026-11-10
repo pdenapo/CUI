@@ -202,7 +202,7 @@ Keep a refactor and a behavior change in separate commits, so each can be review
 - **`master` always builds and passes CI.** Every push runs the Linux, Windows and macOS builds, the sanitizers and the app smoke tests.
 - **One topic per commit.** The first line says what changed, in under about 70 characters; the body says why, and what was checked.
 - **`CHANGELOG.md`** gets a line for every change a user would notice, under the unreleased section, written for users rather than for the code.
-- **Versions** follow semantic versioning: a minor version for new features, a patch for fixes, and a note under "Changed" whenever a change could break a build or alter a stored value. `CUI_VERSION_*` in `cui.h` and `VERSION` in `CMakeLists.txt` change together.
+- **Versions** follow semantic versioning: a minor version for new features, a patch for fixes, and a note under "Changed" whenever a change could break a build or alter a stored value. `CUI_VERSION_*` in `cui.h` and `VERSION` in `CMakeLists.txt` change together. The `GIT_TAG` in the install snippets of `README.md` and `docs/getting-started.md` names the newest release, and changes with them (`tests/first_steps.sh` checks it).
 - **Releases** are published by `.github/workflows/release.yml`, from a version tag or run by hand, with that version's changelog section as the notes.
 - **Never commit secrets**: no API keys, tokens, session links or private URLs, in code, docs, commit messages or test data.
 

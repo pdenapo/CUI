@@ -50,6 +50,8 @@ Contents:
 
 ## Text
 
+Headings, body text, labels, links and inline code, with wrapping that avoids a lone last word.
+
 ```c
 cui_heading(ui, "Settings", 1);          /* 1..4: 36, 28, 22, 17 pt; Geist for 28 and up */
 cui_text(ui, "Body text wraps to the available width.");
@@ -68,7 +70,11 @@ Wrapped text breaks like a careful typesetter: when a paragraph would end on a s
 
 Hierarchy comes from size and color, not weight: CUI uses regular and medium only.
 
+Keyboard: text takes no focus. A link takes Tab, and Enter or Space follows it.
+
 ## Button
+
+Starts an action when clicked. It comes in six variants and three sizes, with an optional icon and a loading state.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="images/components/buttons-dark.png"><img src="images/components/buttons.png" alt="Buttons"></picture>
 
@@ -96,15 +102,21 @@ Every state, rendered by `tests/component_shots.c`. The focus ring only appears 
 
 ## Icon button
 
+A round button with only an icon, ghost by default.
+
 ```c
 if (cui_icon_button(ui, CUI_ICON_TRASH_2, .tooltip = "Delete", .shortcut = "Del")) remove_item();
 ```
 
-A round button with only an icon, ghost by default. Always give it a `tooltip`: it is the button's name.
+Always give it a `tooltip`: it is the button's name.
 
 When a button's icon changes (copy to check, play to pause), the old icon shrinks away while the new one scales in. Nothing to set up: change the icon you pass.
 
+Keyboard: Tab focuses the button, and Enter or Space presses it.
+
 ## Segmented control
+
+A compact set of two to five choices where one is always selected, for switching between views of the same content.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="images/components/segmented-dark.png"><img src="images/components/segmented.png" alt="Segmented control"></picture>
 
@@ -115,9 +127,11 @@ const char *icons[] = { CUI_ICON_LIST, CUI_ICON_LAYOUT_DASHBOARD, CUI_ICON_HISTO
 cui_segmented(ui, "view", items, 3, &view, .icons = icons);
 ```
 
-For switching between two to five views of the same content. The highlight's two edges have their own springs: the leading one runs ahead and the trailing one follows, so it stretches toward the new option and draws in as it lands. Options: `size`, `full_width`, `icons`. Keyboard: arrows move the selection.
+The highlight's two edges have their own springs: the leading one runs ahead and the trailing one follows, so it stretches toward the new option and draws in as it lands. Options: `size`, `full_width`, `icons`. Keyboard: arrows move the selection.
 
 ## Checkbox, switch and radio
+
+The three basic choices: a checkbox for an option, a switch for a setting that applies at once, and radio buttons for one of several.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="images/components/toggles-dark.png"><img src="images/components/toggles.png" alt="Toggles"></picture>
 
@@ -133,6 +147,8 @@ Each returns true when it changes the value. The whole row, label included, is c
 
 ## Slider
 
+Picks a number, or a range with two thumbs, by dragging along a track.
+
 <picture><source media="(prefers-color-scheme: dark)" srcset="images/components/slider-dark.png"><img src="images/components/slider.png" alt="Sliders"></picture>
 
 ```c
@@ -145,6 +161,8 @@ Drag past either end and the track stretches like rubber, then springs back on r
 
 ## Chips and rating
 
+A chip is a small toggle for filters and tags. A rating picks a number of stars.
+
 ![Chips and rating](images/components/chips.png)
 
 ```c
@@ -152,7 +170,11 @@ cui_chip(ui, "Design", &design);           /* toggle chip */
 cui_rating(ui, "stars", &stars, 5);         /* click the current value again to clear */
 ```
 
+Keyboard: Tab moves through the chips, and Enter or Space toggles the focused one. The rating is set with the pointer; it has no keys yet.
+
 ## Text field
+
+A single-line field that edits text in a buffer you own, with a label, an icon, a hint and an error. The search field is a variant.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="images/components/inputs-dark.png"><img src="images/components/inputs.png" alt="Text fields"></picture>
 
@@ -182,6 +204,8 @@ Editing: click to place the caret, drag or Shift+arrows to select, double click 
 
 ## Text area
 
+A multi-line text field that wraps and scrolls.
+
 ![Text area](images/components/textarea.png)
 
 ```c
@@ -192,6 +216,8 @@ cui_textarea(ui, "body", body, sizeof body, .height = -1);   /* fill the availab
 Word wraps, scrolls with the wheel, Up and Down move between visual lines. Enter inserts a newline; Ctrl+Enter submits.
 
 ## Select and combobox
+
+Picks one item from a list that opens under the field. With search it becomes a combobox.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="images/components/select-dark.png"><img src="images/components/select.png" alt="Select"></picture>
 
@@ -206,6 +232,8 @@ cui_select(ui, "lang", languages, n, &lang, .searchable = true, .placeholder = "
 
 ## Date picker and calendar
 
+Picks a date from a month grid, as a field that opens a calendar or as a calendar shown inline.
+
 <picture><source media="(prefers-color-scheme: dark)" srcset="images/components/calendar-dark.png"><img src="images/components/calendar.png" alt="Calendar"></picture>
 
 ```c
@@ -217,7 +245,11 @@ cui_date today = cui_date_today();
 
 Weeks start on Monday. Today has a ring, the selected day is filled.
 
+Keyboard: Enter or Space on the field opens the calendar and Esc closes it. Inside, Tab moves through the month buttons and the days, and Enter picks the focused day.
+
 ## Number field
+
+A field for a number in a range, typed or stepped with its buttons and the arrow keys.
 
 ![Pickers](images/components/pickers.png)
 
@@ -231,14 +263,18 @@ Type a value, use the minus and plus buttons, or Up/Down (Shift for 10 steps). V
 
 ## Color picker
 
+A swatch that opens a saturation and brightness square, a hue bar and preset swatches.
+
 ```c
 static cui_color brand = CUI_RGB(0x7747ff);
 cui_color_picker(ui, "brand", &brand);
 ```
 
-A swatch that opens a saturation and brightness square, a hue bar and preset swatches.
+Keyboard: Enter or Space on the swatch opens the picker, Tab moves through its controls, and Esc closes it.
 
 ## Tabs
+
+Switches between views with a row of labels and an underline that slides to the active one.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="images/components/tabs-dark.png"><img src="images/components/tabs.png" alt="Tabs"></picture>
 
@@ -254,6 +290,8 @@ The underline slides to the active tab. Keyboard: Left and Right. Tabs never tru
 
 ## Sidebar navigation
 
+The items and section titles of an app's sidebar, with one highlight that follows the selection.
+
 <picture><source media="(prefers-color-scheme: dark)" srcset="images/components/sidebar-dark.png"><img src="images/components/sidebar.png" alt="Sidebar"></picture>
 
 ```c
@@ -264,7 +302,11 @@ if (cui_nav_item(ui, "Projects", .icon = CUI_ICON_FOLDER, .selected = page == 1)
 
 All items of a `group` share one highlight that glides to the selected item.
 
+Keyboard: Tab moves through the items, and Enter or Space selects the focused one.
+
 ## Breadcrumb, pagination and stepper
+
+Three ways to show position: the path to a page, the page of a list, and the step of a process.
 
 ![Navigation](images/components/navigation.png)
 
@@ -274,7 +316,11 @@ cui_pagination(ui, "pages", &page, page_count);                                 
 cui_stepper(ui, steps, 4, current);
 ```
 
+Keyboard: Tab moves through the breadcrumb's links and the pagination's page buttons, and Enter or Space follows or presses the focused one. The stepper only displays.
+
 ## Dropdown and context menu
+
+A menu of commands that opens from a button, or at the pointer on a right click.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="images/components/menu-dark.png"><img src="images/components/menu.png" alt="Menu"></picture>
 
@@ -296,6 +342,8 @@ Menus open with a short scale and fade from the trigger, close on a click outsid
 
 ## Popover
 
+A small floating panel anchored to a control, for content that does not need a dialog.
+
 ```c
 if (cui_button(ui, "Filters", .icon = CUI_ICON_FILTER)) cui_popover_toggle(ui, "filters");
 cui_popover(ui, "filters", .width = 280) {
@@ -306,7 +354,11 @@ cui_popover(ui, "filters", .width = 280) {
 
 Anchored to the component before it, flips to stay on screen. Options: `placement`, `width`, `pad`, `gap`.
 
+Keyboard: Enter or Space on the trigger opens the popover. Tab moves through what is inside, and Esc closes it.
+
 ## Tooltip
+
+A short label that appears when the pointer rests on a control.
 
 ![Tooltip](images/components/tooltip.png)
 
@@ -318,7 +370,11 @@ cui_tooltip(ui, "Features in beta may change");   /* for the previous component 
 
 Appears after a short delay. Moving on to a neighbour while it is open, it glides there and changes its text instead of popping again.
 
+Keyboard: a tooltip takes no focus. It belongs to the control before it, which keeps its own keys.
+
 ## Dialog
+
+A modal window for a decision or a short form, which blocks the rest of the app until it is closed.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="images/components/dialog-dark.png"><img src="images/components/dialog.png" alt="Dialog"></picture>
 
@@ -336,13 +392,19 @@ Modal: the scrim blocks everything behind it. Esc, the close button or a click o
 
 ## Sheet
 
+A panel that slides in from an edge.
+
 ```c
 cui_sheet(ui, "Notifications", &open, .side = CUI_SIDE_RIGHT, .size = 400) { ... }
 ```
 
-A panel that slides in from an edge. Content scrolls.
+Content scrolls.
+
+Keyboard: Tab stays inside the open sheet, and Esc closes it.
 
 ## Toast
+
+A short message that appears in a corner and goes away by itself, with an optional action.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="images/components/toast-dark.png"><img src="images/components/toast.png" alt="Toasts"></picture>
 
@@ -355,7 +417,11 @@ if (cui_toast_action_clicked(ui, t)) undo();
 
 Toasts stack in the bottom right corner. Older toasts tuck behind the newest one; hovering expands the stack and pauses the timers. Drag a toast right to dismiss it: a fling or a long drag carries its speed off the screen, a short one springs back, and dragging left meets rubbery resistance. Options: `description`, `tone`, `duration` (seconds, default 4, negative to keep), `action`. Use toasts for background events; for the result of a button press, change the button instead.
 
+Keyboard: a toast's action button takes Tab, and Enter or Space presses it. Toasts never take the focus by themselves.
+
 ## Command palette
+
+A search box over the app's commands, opened with a shortcut.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="images/components/command-palette-dark.png"><img src="images/components/command-palette.png" alt="Command palette"></picture>
 
@@ -372,6 +438,8 @@ Fuzzy search with ranking, grouped results, Up/Down to move, Enter to run, Esc t
 
 ## Alert
 
+An inline message in a tone of information, success, warning or danger, which can be dismissed.
+
 <picture><source media="(prefers-color-scheme: dark)" srcset="images/components/alerts-dark.png"><img src="images/components/alerts.png" alt="Alerts"></picture>
 
 ```c
@@ -381,7 +449,11 @@ cui_alert(ui, "Storage almost full", .tone = CUI_TONE_WARNING, .dismissible = tr
 
 Tones: `CUI_TONE_NEUTRAL` (info), `SUCCESS`, `WARNING`, `DANGER`. Returns false once dismissed.
 
+Keyboard: the alert only displays. Its dismiss button, when it has one, takes Tab, and Enter or Space presses it.
+
 ## Progress, meter, spinner and skeleton
+
+Ways to show waiting and amounts: a progress bar, a meter against a limit, a spinner, a gauge and placeholder shapes for content that is loading.
 
 ![Feedback](images/components/feedback.png)
 
@@ -395,6 +467,8 @@ cui_gauge(ui, "CPU", 0.42f, 130);
 ```
 
 ## Badge, avatar and keycap
+
+Small labels: a badge for a status or a count, an avatar for a person, and a keycap for a keyboard key.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="images/components/badges-dark.png"><img src="images/components/badges.png" alt="Badges and avatars"></picture>
 
@@ -411,6 +485,8 @@ Avatars without an image show initials on a color picked from the name, so the s
 
 ## Card and metric
 
+A card is a surface that groups content. A metric shows one number with its change and an optional sparkline.
+
 <picture><source media="(prefers-color-scheme: dark)" srcset="images/components/cards-dark.png"><img src="images/components/cards.png" alt="Cards"></picture>
 
 ```c
@@ -424,7 +500,11 @@ The arrow follows the sign of `delta`; the color says whether that is good. Set 
 
 Cards rest on a hairline border with no shadow. Card options: `pad` (24), `pad_x`, `pad_y`, `gap`, `dir`, `align`, `width`, `height`, `min_width`, `max_width`, `wrap` (row cards), `hoverable`, `muted`, `selected`. `.width = CUI_FILL, .max_width = 520` fills a phone and stops at 520 on a wide window.
 
+Keyboard: a `hoverable` card takes Tab, and Enter or Space clicks it. Other cards and metrics only display.
+
 ## Empty state
+
+What to show where there is nothing yet: an icon, a title, a line of help and an action.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="images/components/empty-state-dark.png"><img src="images/components/empty-state.png" alt="Empty state"></picture>
 
@@ -434,7 +514,11 @@ if (cui_empty_state(ui, "No projects yet", .icon = CUI_ICON_FOLDER_OPEN,
     create_project();
 ```
 
+Keyboard: the empty state only displays. Its action button takes Tab, and Enter or Space presses it.
+
 ## Table
+
+Rows and columns of your data, with sortable headers, selectable rows and any component in a cell.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="images/components/table-dark.png"><img src="images/components/table.png" alt="Table"></picture>
 
@@ -460,7 +544,11 @@ cui_table(ui, "orders", cols, 3, .sort = &sort, .selectable = true, .height = CU
 
 Cells hold any components. Clicking a sortable header updates `sort` (column and direction); you sort your data. With `height` the body scrolls under a fixed header. When the container is narrower than the fixed columns plus 96 points for each flexible one, the table scrolls sideways instead of squeezing cells. Options: `sort`, `height`, `striped`, `compact`, `selectable`.
 
+Keyboard: Tab reaches the headers of sortable columns, and Enter or Space sorts by the focused one. Rows are selected with the pointer; for arrow keys through rows use the [data grid](#data-grid-and-filter-bar).
+
 ## List and tree
+
+List rows with an avatar or an icon, a title and a detail line, and a tree of items that fold.
 
 ![Tree and list](images/components/tree-list.png)
 
@@ -479,6 +567,8 @@ Tree keyboard: Right opens, Left closes.
 
 ## Accordion
 
+Sections that fold open and closed under their headers.
+
 ![Accordion](images/components/accordion.png)
 
 ```c
@@ -491,7 +581,11 @@ if (cui_accordion_begin(ui, "Is it dependency free?", &open)) {
 
 The content animates its height on a smooth spring and the chevron rotates.
 
+Keyboard: Tab moves through the headers, and Enter or Space opens or closes the focused one.
+
 ## Charts
+
+Line, bar and donut charts and sparklines, with axes, a crosshair and a tooltip on hover.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="images/components/line-chart-dark.png"><img src="images/components/line-chart.png" alt="Line chart"></picture>
 
@@ -510,6 +604,8 @@ Charts draw in once, pick nice axis ticks, show a crosshair that glides between 
 
 ## Image
 
+Shows a picture loaded from a file or made from your own pixels.
+
 ```c
 int w, h;
 cui_texture tex = cui_image_load(ui, "photo.jpg", &w, &h);      /* PNG or JPEG */
@@ -522,6 +618,8 @@ PNG and JPEG are decoded out of the box. Configure with `-DCUI_IMAGE_ALL_FORMATS
 
 ## Radio cards
 
+One choice out of a few, shown as cards with a title and a line of explanation each.
+
 <picture><source media="(prefers-color-scheme: dark)" srcset="images/components/radio-cards-dark.png"><img src="images/components/radio-cards.png" alt="Radio cards"></picture>
 
 ```c
@@ -533,9 +631,11 @@ static const cui_choice places[] = {
 cui_radio_cards(ui, "place", places, 3, &place, .columns = 3);
 ```
 
-Bigger targets for choices that need a sentence of explanation. Keyboard: arrows move the selection.
+Keyboard: arrows move the selection.
 
 ## Tag input
+
+A field that turns typed words into removable chips, kept as a comma separated list.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="images/components/tag-otp-dark.png"><img src="images/components/tag-otp.png" alt="Tag input, code input and password strength"></picture>
 
@@ -548,6 +648,8 @@ Tags live in your buffer as a comma separated list. Enter or a comma adds the ty
 
 ## One time code
 
+A row of boxes for a verification code, filled by typing or pasting.
+
 ```c
 static char code[7];                        /* length + 1 */
 if (cui_otp_input(ui, "code", code, 6)) verify(code);   /* true once when complete */
@@ -557,12 +659,16 @@ Type or paste: letters and digits fill the boxes in order, anything else is igno
 
 ## Password strength
 
+A meter under a password field that scores the password from too short to strong.
+
 ```c
 cui_input(ui, "pw", pw, sizeof pw, .label = "Password", .password = true);
 int score = cui_password_strength(ui, pw);   /* 0 too short .. 4 strong */
 ```
 
 ## Button group, copy and hold to confirm
+
+Three small helpers for actions: buttons joined into one group, a button that copies text to the clipboard, and a button that must be held to fire.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="images/components/button-extras-dark.png"><img src="images/components/button-extras.png" alt="Button group, copy and hold"></picture>
 
@@ -579,6 +685,8 @@ The hold button fills while pressed (or while Space is held with keyboard focus)
 
 ## Timeline and progress ring
 
+A vertical list of events in order, and a ring that fills with a percentage.
+
 <picture><source media="(prefers-color-scheme: dark)" srcset="images/components/timeline-dark.png"><img src="images/components/timeline.png" alt="Timeline and progress ring"></picture>
 
 ```c
@@ -589,6 +697,8 @@ cui_progress_ring(ui, "Onboarding", 0.72f, 110);
 ```
 
 ## Reorderable list
+
+A list whose rows the user drags into a new order.
 
 ```c
 static int order[5] = { 0, 1, 2, 3, 4 };     /* your item indices, in display order */
@@ -602,3 +712,5 @@ if (cui_reorder_end(ui)) save_order(order);
 ```
 
 Press a row and drag: it lifts with a shadow and follows the pointer while the other rows glide out of the way. Dropping rewrites `order`. Buttons inside rows keep working, since a drag only starts after the pointer moves a few points.
+
+Keyboard: none yet. Rows are dragged with the pointer; buttons inside rows keep their own keys.

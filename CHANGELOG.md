@@ -2,6 +2,53 @@
 
 What changed in CUI, newest first. Every component mentioned here runs live in the docs.
 
+## Unreleased
+
+### Changed
+
+- **Every component has a description.** Each section of the component docs now opens with one sentence that says what the component is and what it is for. The site shows it under the page title, on the cards that link to the page and in search results, where it used to show whatever sentence came first ("Weeks start on Monday." for the date picker).
+- **Site search reads the whole site.** It now searches the text of the guides, the options and struct fields of every component and the changelog, and shows the words around a match. It used to look at titles and summaries only, so "install", "find_package" or the name of an option found nothing.
+- **Every page has its own address for search engines.** The site was one page as far as a search engine could tell, so nobody searching for "C date picker" could land on the date picker. The build now writes a page per component and per guide (`c/date-picker-and-calendar/`, `guide/tutorial/`) with its text, title and description, plus `sitemap.xml` and `robots.txt`. Opened in a browser, such a page becomes the live site at that page.
+- **Links to the site show a preview.** Every page carries a title, a description and an image for the cards that chat apps and social sites draw; a component's card shows the component.
+- The site shows the version it documents beside the name.
+- **A function reference.** The site has a page that lists every public function of `cui.h`, `cui_app.h` and `cui_render.h` (496 of them) under the headers' own sections: its signature, the comment written beside it, and a link to the component page or guide that explains it. It has a filter, and site search finds a function by name.
+- **Complete programs on component pages.** A page's usage block is a fragment. 71 of the 147 pages now also have the example as a whole program, with its includes, a frame function and `main`, under "Complete program". The site build compiles each one and leaves out any that does not build.
+- **More options are described.** Fields that mean the same everywhere (`width`, `icon`, `disabled`, `format` and others) now have a description on every options table, and a field whose type is an enum lists its values.
+- **A new README.** It opens with what CUI is in plain words, says what it is not (it draws its own components and does not wrap the system's), compares it with the libraries people know, and lists the limitations in full, including the eight components that still need a pointer. It also says how the code is written and what tests it.
+- A component page lists only its own functions, and no longer repeats its option names in a sentence above the options table.
+- Release notes link to the files they mention with full addresses, so the links work from the release page.
+
+### Fixed
+
+- The values of an enum on a component page's "Data and results" section showed as `[object HTMLElement]` (17 pages).
+
+## 2026-11-09 · 1.3.1: first steps, a tutorial and ready-to-run examples
+
+A release for people starting out. Every step of the getting-started guide was followed as written, and what did not work is fixed.
+
+### Added
+
+- **Tutorial**: [build a to-do app](docs/tutorial.md) in about 130 lines, step by step: your data as the state, a list that grows, ids for repeated rows, a filter, a dialog and saving to a file. The finished app is `examples/todo.c`, and a test types into it and checks that it does what the tutorial says.
+- **Ready-to-run examples**: each release now attaches the example apps built for Windows, macOS and Linux, so you can try them without a compiler.
+- `cui_app_target(my_app)` for CMake projects. It gives a window app no console on Windows and keeps `int main(void)` as the entry point, and in release builds it links only the library code the app calls. A first window is about 250 KB with it and about 470 KB without.
+- **Component pages on the site list their data.** Under the options, each page now shows the structs you fill in and the structs you get back, with their fields and the values of their enums (105 tables on 63 pages).
+- **Every component page says what the keyboard does.** 119 pages list their keys, 20 are marked as display only, and 8 say plainly that they still need a pointer: the rating, the histogram slider's handles, swipe actions, the reorderable list, the JSON viewer, the agent plan's steps, blame and the time histogram.
+- [From C++](docs/integration.md#from-c): how to call CUI from C++, with an example the tests compile.
+- `tests/first_steps.sh`, run on every push: it takes the code and the commands out of the getting-started guide and runs them, without CMake, as one file, with CMake and from an installed copy.
+
+### Changed
+
+- **Metric cards** put the change under the value when the card is too narrow for both, instead of cutting both short.
+- The install snippets name a release (`GIT_TAG v1.3.1`), so a build does not change under you.
+- The docs say what "native" means here: compiled code with no browser or runtime, drawing its own components. They also say how to get the small sizes they quote.
+
+### Fixed
+
+- An installed CUI could not be used through `find_package(cui)`: the package did not look for the thread library it links.
+- The getting-started guide's "Without CMake" command left out `src/platform/cui_dialogs.c` and did not link.
+- With the single-file distribution, the guide's first window did not compile: it needs `#include "cui.h"`, which the guide now says. The guide's one-line build also gave a 1.6 MB program; it now shows the two commands that give about 265 KB.
+- The Windows link line in the guide and in `cui.pc` lacked `comdlg32` and `ole32`.
+
 ## 2026-11-09 · 1.3: developer tools
 
 ### Added

@@ -90,6 +90,15 @@ jobs:
           ${{ matrix.cc }} $W -Idist -DCUI_NO_APP -DCUI_NO_DEFAULT_FONTS -DCUI_NO_STB_IMAGE -c dist/cui.c -o dist/core.o
           ${{ matrix.cc }} $W -Idist -DCUI_TEXT_SHAPING -c dist/cui.c -o dist/shaping.o
 
+  first-steps:
+    name: First steps, as the guide gives them
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -q && sudo apt-get install -y -q libx11-dev
+      # the code and commands of docs/getting-started.md: without CMake, one file, CMake, installed
+      - run: tests/first_steps.sh
+
   windows:
     name: Windows (${{ matrix.name }}, shaping ${{ matrix.shaping }})
     runs-on: windows-2022
