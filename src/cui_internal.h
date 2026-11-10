@@ -677,6 +677,10 @@ void cui__field_message(cui_ctx *ui, const char *hint, const char *error);
 int cui__scroll_begin_ex(cui_ctx *ui, cui_id id, const cui_box *box, bool horizontal);
 void cui__nice_range(float lo, float hi, int target_ticks, float *out_lo, float *out_hi, float *out_step);
 const char *cui__fmt_value(cui_ctx *ui, const char *fmt, float v);
+/* chart annotations (cui_instrument.c): drawn by every chart that takes them */
+void cui__paint_annotations(cui_ctx *ui, const cui_chart_annotation *a, int n, cui_rect plot, double x0, double x1,
+                            double y0, double y1, float label_top, bool gutter);
+cui_chart_annotation *cui__copy_annotations(cui_ctx *ui, const cui_chart_annotation *a, int n);
 void cui__scroll_end_ex(cui_ctx *ui);
 cui_color cui__backdrop(cui_ctx *ui);
 

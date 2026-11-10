@@ -110,7 +110,9 @@ if (cui_icon_button(ui, CUI_ICON_TRASH_2, .tooltip = "Delete", .shortcut = "Del"
 
 Always give it a `tooltip`: it is the button's name.
 
-When a button's icon changes (copy to check, play to pause), the old icon shrinks away while the new one scales in. Nothing to set up: change the icon you pass.
+Returns true on the frame it is clicked, and never while `disabled` or `loading`. `shortcut` is only a hint shown after the tooltip: it does not bind the key, so check the key yourself with `cui_shortcut`. The button's identity comes from its tooltip and its icon. Two of them with the same icon and tooltip in one scope, such as a delete button on every row of a list, need an id scope each: `cui_push_id_int(ui, row)` before the row and `cui_pop_id(ui)` after it.
+
+A `cui_button` whose `.icon` changes (copy to check, play to pause) shrinks the old icon away while the new one scales in. An icon button is told apart by its tooltip and its icon together, so changing the icon of a `cui_icon_button` makes it a new button: the swap is not animated and keyboard focus does not stay on it.
 
 Keyboard: Tab focuses the button, and Enter or Space presses it.
 
@@ -128,6 +130,8 @@ cui_segmented(ui, "view", items, 3, &view, .icons = icons);
 ```
 
 The highlight's two edges have their own springs: the leading one runs ahead and the trailing one follows, so it stretches toward the new option and draws in as it lands. Options: `size`, `full_width`, `icons`. Keyboard: arrows move the selection.
+
+Returns true on the frame the selection changes. `view` is your `int`, the index of the selected option. The control writes it on a click and keeps it between 0 and `count` - 1; set it from code and the highlight glides there. `items` and `icons` are your arrays, read every frame, and `icons` needs an entry or `NULL` for each option. For pages of different content use tabs, and for options that can each be on or off use a toggle group.
 
 ## Checkbox, switch and radio
 
@@ -159,6 +163,8 @@ cui_range_slider(ui, "Price", &lo, &hi, 0, 500);
 
 Drag past either end and the track stretches like rubber, then springs back on release. Clicking the track glides the thumb to the spot. Options: `step`, `show_value`, `format`, `disabled`, `width`. Keyboard: arrows step (Shift for 10 steps), Home and End.
 
+Both return true on a frame the value changes. `volume` is your `float`. The slider writes it while it is dragged and keeps it between the minimum and the maximum, so a value set outside the range is pulled back in. `format` is a `printf` format for one `double` and defaults to "%.0f". The label is also the identity: two sliders with the same label in one scope need a key, as in `"Volume##left"`. `cui_range_slider` takes two floats and no options; its thumbs cannot cross and are moved with the pointer only.
+
 ## Chips and rating
 
 A chip is a small toggle for filters and tags. A rating picks a number of stars.
@@ -166,9 +172,15 @@ A chip is a small toggle for filters and tags. A rating picks a number of stars.
 ![Chips and rating](images/components/chips.png)
 
 ```c
+static bool design;
+static int stars = 3;
 cui_chip(ui, "Design", &design);           /* toggle chip */
 cui_rating(ui, "stars", &stars, 5);         /* click the current value again to clear */
 ```
+
+`cui_chip` returns true on the frame it is toggled. Its second argument points at your `bool`, which the chip flips; with `NULL` the chip only displays, unselected. The label is also the identity, so two chips with the same label in one scope need a key: `"Design##team"` shows "Design". A chip is as wide as its label, so put a set of them in a row that wraps: `cui_row(ui, .gap = 8, .wrap = true)`.
+
+`cui_rating` returns true on the frame a star is clicked. `stars` is your `int`, from 0 for no rating to the number of stars, which is the last argument: 0 or less gives 5, and 16 is the most. Ratings are whole stars.
 
 Keyboard: Tab moves through the chips, and Enter or Space toggles the focused one. The rating is set with the pointer; it has no keys yet.
 
@@ -209,11 +221,14 @@ A multi-line text field that wraps and scrolls.
 ![Text area](images/components/textarea.png)
 
 ```c
+static char bio[512], body[4096];
 cui_textarea(ui, "bio", bio, sizeof bio, .label = "Bio", .height = 120);
 cui_textarea(ui, "body", body, sizeof body, .height = -1);   /* fill the available height */
 ```
 
 Word wraps, scrolls with the wheel, Up and Down move between visual lines. Enter inserts a newline; Ctrl+Enter submits.
+
+Returns the same flags as the text field: `CUI_CHANGED` on a frame the text changes, `CUI_SUBMITTED` when it is submitted, and `CUI_FOCUSED` and `CUI_BLURRED` on the frames it gains and loses the focus. `bio` is your buffer and the next argument its size in bytes, the terminating zero included. The library edits it in place, never writes past it, and drops what does not fit without cutting a UTF-8 character in half. Lines are separated by `\n`. `height` is in points and defaults to 96, and a negative value fills the height left in the container. It takes the options of the text field. For source code, use the code editor.
 
 ## Select and combobox
 
@@ -230,6 +245,8 @@ cui_select(ui, "lang", languages, n, &lang, .searchable = true, .placeholder = "
 
 `searchable` adds a filter field at the top of the list (a combobox). Options: `label`, `placeholder`, `icons`, `searchable`, `disabled`, `width`. Keyboard: Up/Down open the list and move the highlight, Enter chooses, Esc closes.
 
+Returns true on the frame the choice changes. `country` is your `int`, the index of the chosen item. A value outside 0 to `count` - 1, such as -1, means nothing is chosen, and the field then shows `placeholder`, or "Select". Choosing an item closes the list, which scrolls once it is taller than 300 points. The search keeps the items that contain the typed text, whatever the case. For several choices use the multi-select, and for two to five options that should stay visible use a segmented control.
+
 ## Date picker and calendar
 
 Picks a date from a month grid, as a field that opens a calendar or as a calendar shown inline.
@@ -245,6 +262,8 @@ cui_date today = cui_date_today();
 
 Weeks start on Monday. Today has a ring, the selected day is filled.
 
+Both return true on the frame a day is clicked. `due` is your `cui_date`: a year, a month from 1 to 12 and a day. A year of 0 means no date: the picker then shows `placeholder`, or "Pick a date", and the calendar opens on the current month. The picker writes the date and closes. The library keeps only the month in view, under `id`. It starts at the month of the value and after that follows the month buttons, so changing the value from code does not turn the page. `cui_date_today` takes no context and reads the local date from the system clock. For a start and an end, use the date range picker.
+
 Keyboard: Enter or Space on the field opens the calendar and Esc closes it. Inside, Tab moves through the month buttons and the days, and Enter picks the focused day.
 
 ## Number field
@@ -254,12 +273,14 @@ A field for a number in a range, typed or stepped with its buttons and the arrow
 ![Pickers](images/components/pickers.png)
 
 ```c
-static double seats = 4;
+static double seats = 4, price = 19.99;
 cui_number(ui, "seats", &seats, 1, 100, .label = "Seats", .step = 1);
 cui_number(ui, "price", &price, 0, 1e6, .decimals = 2, .suffix = "USD");
 ```
 
 Type a value, use the minus and plus buttons, or Up/Down (Shift for 10 steps). Values are clamped to the range.
+
+Returns true on a frame the value changes, which while typing is every keystroke that reads as a different number. `seats` is your `double`. The field shows a value you set from code as soon as it is not focused, and pulls a value outside the range back in on every frame. `step` is what the buttons and the keys add or take away, 1 when not set. `decimals` is how many places are shown, 0 when not set. It does not round the value: 2.5 typed into a field with no decimals stays 2.5 in your variable.
 
 ## Color picker
 
@@ -270,7 +291,9 @@ static cui_color brand = CUI_RGB(0x7747ff);
 cui_color_picker(ui, "brand", &brand);
 ```
 
-Keyboard: Enter or Space on the swatch opens the picker, Tab moves through its controls, and Esc closes it.
+Returns true on a frame the color changes, which during a drag is every frame the pointer moves it. `brand` is your `cui_color`, four bytes of red, green, blue and alpha, and `CUI_RGB(0x7747ff)` builds an opaque one from a hex number. The field shows a swatch and the color as `#RRGGBB`. The panel that opens is 240 points wide and holds the square for saturation and brightness, the hue bar and eight preset swatches. There is no alpha control and no field to type a hex value into, and a color picked here is always opaque. A color you change from code shows in the swatch at once, and the panel picks it up the next time it opens.
+
+Keyboard: Enter or Space on the swatch opens the picker and Esc closes it. Inside, the color is picked with the pointer: the square, the hue bar and the presets take no keyboard focus yet.
 
 ## Tabs
 
@@ -288,6 +311,8 @@ switch (tab) { /* content */ }
 
 The underline slides to the active tab. Keyboard: Left and Right. Tabs never truncate their labels: when they are wider than their container the strip scrolls sideways, fades at the edge that has more, and brings a newly selected tab into view.
 
+Returns true on the frame the selected tab changes. `tab` is your `int`: the tabs write it on a click and keep it between 0 and `count` - 1. Tabs draw only the strip, so showing the content of the selected tab is your `switch` below it. Set the index from code and the strip scrolls that tab into view. At most 32 tabs are shown. Options: `variant` (`CUI_TABS_UNDERLINE`, the default, or `CUI_TABS_PILL`), `icons` and `full_width`. For a compact choice between views of the same content, use a segmented control.
+
 ## Sidebar navigation
 
 The items and section titles of an app's sidebar, with one highlight that follows the selection.
@@ -302,6 +327,8 @@ if (cui_nav_item(ui, "Projects", .icon = CUI_ICON_FOLDER, .selected = page == 1)
 
 All items of a `group` share one highlight that glides to the selected item.
 
+`cui_nav_item` returns true on the frame it is clicked. It does not remember the selection: you keep the current page, as `page` does above, and pass `.selected` on every frame. The label is also the identity, so two items with the same label in one scope need a key: `"Settings##team"` shows "Settings". `badge` is text, so format a count yourself. Items without a `group` share one common group; name the groups when a window has two separate lists, so each keeps its own highlight. An item fills the width of its container. `cui_nav_section` draws a title above a set of items and returns nothing.
+
 Keyboard: Tab moves through the items, and Enter or Space selects the focused one.
 
 ## Breadcrumb, pagination and stepper
@@ -311,10 +338,19 @@ Three ways to show position: the path to a page, the page of a list, and the ste
 ![Navigation](images/components/navigation.png)
 
 ```c
+static int page = 0;
+const char *steps[] = { "Account", "Plan", "Payment", "Review" };
+
 int clicked = cui_breadcrumb(ui, (const char *[]){ "Home", "Projects", "CUI" }, 3);   /* index or -1 */
 cui_pagination(ui, "pages", &page, page_count);                                        /* page is 0 based */
 cui_stepper(ui, steps, 4, current);
 ```
+
+`cui_breadcrumb` returns the index of the item that was clicked, or -1. The last item is the current page: it is not a link and is never returned. Each item is told apart by its text, so two levels with the same name need a key, as in `"Docs##2"`.
+
+`cui_pagination` returns true on the frame the page changes. `page` is your `int`, counted from 0 while the buttons show numbers from 1, and it is kept between 0 and `page_count` - 1. With seven pages or fewer, all are shown. Beyond that the first, the last and the pages around the current one stay, with an ellipsis for each gap.
+
+`cui_stepper` returns nothing. `current` is the index of the step in progress, from 0: the steps before it are marked done, and passing the number of steps marks them all done. In a narrow row only the current step keeps its label.
 
 Keyboard: Tab moves through the breadcrumb's links and the pagination's page buttons, and Enter or Space follows or presses the focused one. The stepper only displays.
 
@@ -354,6 +390,8 @@ cui_popover(ui, "filters", .width = 280) {
 
 Anchored to the component before it, flips to stay on screen. Options: `placement`, `width`, `pad`, `gap`.
 
+The block runs only while the popover is on screen. You keep no state: the library stores whether it is open under `id`, and `cui_popover_toggle`, `cui_popover_open` and `cui_popover_close` change that from anywhere in the same id scope, while `cui_popover_is_open` reads it. Call `cui_popover` on every frame, right after the control it should hang from, not inside that control's `if`. A press outside closes it. `width` is in points; without it the panel is as wide as its content and at least as wide as its anchor. Use a dialog when the rest of the window must wait, and a dropdown menu for a list of commands.
+
 Keyboard: Enter or Space on the trigger opens the popover. Tab moves through what is inside, and Esc closes it.
 
 ## Tooltip
@@ -363,12 +401,14 @@ A short label that appears when the pointer rests on a control.
 ![Tooltip](images/components/tooltip.png)
 
 ```c
-cui_icon_button(ui, CUI_ICON_BOLD, .tooltip = "Bold", .shortcut = "Ctrl B");
-cui_badge(ui, "Beta");
+cui_icon_button(ui, CUI_ICON_BOLD, .tooltip = "Bold", .shortcut = "Ctrl B");   /* buttons take .tooltip */
+cui_link(ui, "What is beta?");
 cui_tooltip(ui, "Features in beta may change");   /* for the previous component */
 ```
 
 Appears after a short delay. Moving on to a neighbour while it is open, it glides there and changes its text instead of popping again.
+
+`cui_tooltip` returns nothing and takes no `id`: call it on every frame, right after the component it belongs to. That component must be one that reacts to the pointer, such as a button, a link or a hoverable card. Plain text, a badge and an avatar do not, so a tooltip placed after one of them attaches to whatever interactive component came before. The delay is 0.55 seconds, and none when another tooltip was showing less than 0.4 seconds ago. The text is copied, up to 255 bytes. For a card with its own layout, use a hover card.
 
 Keyboard: a tooltip takes no focus. It belongs to the control before it, which keeps its own keys.
 
@@ -395,10 +435,14 @@ Modal: the scrim blocks everything behind it. Esc, the close button or a click o
 A panel that slides in from an edge.
 
 ```c
+static bool open;
+if (cui_button(ui, "Notifications")) open = true;
 cui_sheet(ui, "Notifications", &open, .side = CUI_SIDE_RIGHT, .size = 400) { ... }
 ```
 
 Content scrolls.
+
+`open` is your `bool`: the sheet shows while it is true, and the close button, a click on the dimmed window behind and the close key set it to false. Call `cui_sheet` on every frame, not inside the `if` that opens it. The block runs while the sheet is on screen, which includes the slide out after `open` turns false. `side` is `CUI_SIDE_RIGHT` (the default), `CUI_SIDE_LEFT`, `CUI_SIDE_BOTTOM` or `CUI_SIDE_TOP`. `size` is the width in points for a left or right sheet and the height for a top or bottom one; it defaults to 400. `description` adds a line under the title, and the title is also the sheet's identity. Use a sheet for detail beside the page, and a dialog for a short decision.
 
 Keyboard: Tab stays inside the open sheet, and Esc closes it.
 
@@ -436,6 +480,8 @@ int chosen = cui_command_palette(ui, &palette, commands, 2);   /* index or -1 */
 
 Fuzzy search with ranking, grouped results, Up/Down to move, Enter to run, Esc to close.
 
+Returns the index of the chosen command in your array, on the frame it is chosen, and -1 otherwise. `palette` is your `bool`: the palette shows while it is true, and choosing a command, a click outside and the close key set it to false. Each `cui_command` is a title, an icon, a group and a shortcut, and any but the title may be `NULL`. Group headings show while the search is empty, one above each run of commands with the same group, so keep those commands next to each other in the array. The shortcut is only shown as a hint: binding it is `cui_shortcut` in your own code.
+
 ## Alert
 
 An inline message in a tone of information, success, warning or danger, which can be dismissed.
@@ -448,6 +494,8 @@ cui_alert(ui, "Storage almost full", .tone = CUI_TONE_WARNING, .dismissible = tr
 ```
 
 Tones: `CUI_TONE_NEUTRAL` (info), `SUCCESS`, `WARNING`, `DANGER`. Returns false once dismissed.
+
+Returns true while the alert is shown, so `if (!cui_alert(...))` tells you it is gone. The library remembers the dismissal itself, under the alert's title, and a dismissed alert draws nothing from then on. To show the same text again later, give it a new key: `"Storage almost full##2"` shows the same title. An alert without `dismissible` always returns true, and whether to show it at all is your own `if`. Each tone brings its own icon, which `icon` replaces. `description` is a second, wrapping line under the title. For news about the whole view use a banner, and for something that just happened use a toast.
 
 Keyboard: the alert only displays. Its dismiss button, when it has one, takes Tab, and Enter or Space presses it.
 
@@ -466,6 +514,8 @@ cui_skeleton(ui, CUI_PCT(60), 12);             /* shimmering placeholder */
 cui_gauge(ui, "CPU", 0.42f, 130);
 ```
 
+None of these returns anything or takes the pointer. `cui_progress` takes a fraction from 0 to 1, clamped, and glides to a new value. With `indeterminate` the value is ignored and a short segment travels along the track. Options: `label` and `show_value`, which add a row above the bar with the name and a whole percentage, `tone`, `height` in points (6) and `width`. `cui_meter` takes an amount, a limit and a unit as text, prints them as "18.4 / 20 GB", and turns amber above 75% and red above 90% of the limit. `cui_spinner` takes its size in points, and 0 means 20. `cui_skeleton` takes a width and a height in points (14 when 0). `cui_gauge` takes a label, a fraction from 0 to 1 and a size in points (140 when 0).
+
 ## Badge, avatar and keycap
 
 Small labels: a badge for a status or a count, an avatar for a person, and a keycap for a keyboard key.
@@ -482,6 +532,8 @@ cui_kbd(ui, "Ctrl Shift P");
 ```
 
 Avatars without an image show initials on a color picked from the name, so the same person always gets the same color.
+
+None of these returns anything, keeps state or reacts to the pointer, so a tooltip or a hover card cannot hang from one directly. Badge options: `tone` (any `CUI_TONE_*`, neutral when not set), `dot`, `solid`, `icon` and `size`. `cui_avatar` takes the person's name, which gives the initials and the color. Options: `size`, the diameter in points (32), `image`, a `cui_texture` that replaces the initials, `status` and `square`. `status` is "online", "busy" or "away", and any other word gives a gray dot. `cui_avatar_group` takes an array of names, how many there are, how many to show before a "+N" (4 when 0) and the size (32 when 0). `cui_kbd` takes key names separated by spaces and draws one keycap for each.
 
 ## Card and metric
 
@@ -513,6 +565,8 @@ if (cui_empty_state(ui, "No projects yet", .icon = CUI_ICON_FOLDER_OPEN,
                     .description = "A project holds your screens, their builds and who can see them.", .action = "New project"))
     create_project();
 ```
+
+Returns true on the frame its action button is clicked, and always false when there is no `action`. It keeps no state and decides nothing: show it from your own `if`, when the list or the search result is empty. The title is the only required text. `icon` is drawn large and muted above it, `description` wraps under it, and `action` is the label of the button. The block fills the width of its container and centers its content, so give it the area the missing content would fill.
 
 Keyboard: the empty state only displays. Its action button takes Tab, and Enter or Space presses it.
 
@@ -565,6 +619,10 @@ if (cui_tree_begin(ui, "src", &src_open, NULL)) {
 
 Tree keyboard: Right opens, Left closes.
 
+`cui_list_item` returns true on the frame the row is clicked. It keeps no selection: pass `.selected` from your own state. The title is also the identity, so two rows with the same title in one scope need a key (`"Notes##2"`). `avatar` is a person's name and takes the place of `icon`.
+
+`cui_tree_begin` returns true while the node is open, and only then do you add its children and call `cui_tree_end`. A leaf never opens, so it gets no `cui_tree_end`, as `main.c` shows above. The third argument points at your `bool`, which a click on the node flips; pass `NULL` for a leaf. `cui_tree_clicked` is true on the frame the node of the last `cui_tree_begin` was clicked, so ask right after that call. Children are scoped by their parent, so the same name in two folders is fine. For a tree with columns, use the tree table.
+
 ## Accordion
 
 Sections that fold open and closed under their headers.
@@ -580,6 +638,8 @@ if (cui_accordion_begin(ui, "Is it dependency free?", &open)) {
 ```
 
 The content animates its height on a smooth spring and the chevron rotates.
+
+`cui_accordion_begin` returns true while the section is open or still closing, and only then do you add its content and call `cui_accordion_end`, as the `if` above does. `open` is your `bool` and must not be `NULL`: a click on the header flips it, and setting it from code opens or closes the section with the same animation. Each section has its own `bool`, so several can be open at once; to keep one open at a time, clear the others when one turns true. The title is also the identity, so two sections with the same title in one scope need a key (`"Details##billing"`). For a card that opens, use the expandable card.
 
 Keyboard: Tab moves through the headers, and Enter or Space opens or closes the focused one.
 
@@ -614,6 +674,8 @@ cui_texture raw = cui_image_create(ui, w, h, rgba_pixels);        /* from memory
 cui_image_destroy(ui, tex);
 ```
 
+`cui_image_load` returns a `cui_texture`, or 0 when the file cannot be read or decoded. Call it once, not on every frame, keep the texture for as long as you draw it, and free it with `cui_image_destroy`. `cui_image_create` takes `w * h` pixels of four bytes each, red, green, blue and alpha, and copies them. `cui_image` returns nothing and stretches the texture over the box given by `width` and `height`, 64 by 64 points when they are not set, so work the height out from the pixel size to keep the proportions.
+
 PNG and JPEG are decoded out of the box. Configure with `-DCUI_IMAGE_ALL_FORMATS=ON` to add BMP, GIF and TGA, or `-DCUI_STB_IMAGE=OFF` to leave decoding out and upload your own pixels with `cui_image_create`.
 
 ## Radio cards
@@ -628,8 +690,11 @@ static const cui_choice places[] = {
     { "Team server", "Synced every few minutes.", CUI_ICON_SERVER, "Default" },
     { "Both", "Local, plus a nightly upload.", CUI_ICON_LAYERS, NULL },
 };
+static int place = 1;
 cui_radio_cards(ui, "place", places, 3, &place, .columns = 3);
 ```
+
+Returns true on the frame the selection changes. `place` is your `int`, the index of the selected card, and a value that matches no card, such as -1, leaves all of them unselected. `places` is your array of `cui_choice`, read every frame: a title, a description, an icon and a badge. `columns` is the number of cards in a row. When it is 0, up to three choices share one row and more are laid out in two columns. A container too narrow for columns of 220 points gets fewer of them, down to one. Use radio cards when each choice needs a sentence of explanation, and `cui_radio_group` or a segmented control when a label says it all.
 
 Keyboard: arrows move the selection.
 
@@ -646,6 +711,8 @@ cui_tag_input(ui, "topics", tags, sizeof tags, .label = "Topics", .max_tags = 8)
 
 Tags live in your buffer as a comma separated list. Enter or a comma adds the typed tag, the x on a chip removes it, Backspace in an empty field removes the last one.
 
+Returns true on the frame a tag is added or removed. `tags` is your buffer and the next argument its size in bytes. The library rewrites it as `"design, c99"`, tags joined by a comma and a space. To read the tags, split the text at the commas and trim the spaces. A tag that no longer fits in the buffer is not added. The word being typed is kept by the library and is not in your buffer until it becomes a tag.
+
 ## One time code
 
 A row of boxes for a verification code, filled by typing or pasting.
@@ -657,14 +724,21 @@ if (cui_otp_input(ui, "code", code, 6)) verify(code);   /* true once when comple
 
 Type or paste: letters and digits fill the boxes in order, anything else is ignored. Backspace removes the last character.
 
+Returns true once, on the frame the last box is filled, and again only after a character was removed and the code completed anew. `code` is your buffer of `length` + 1 bytes, zero terminated; start it empty, as a `static` array is. The library writes the characters as they were typed, without changing their case. To clear the boxes after a wrong code, set `code[0] = 0`. `length` is the number of boxes, at most 12, and codes of six or more get a gap in the middle. The boxes are 44 points wide and shrink to 30 in a narrow container.
+
+Keyboard: Tab focuses the boxes as one field. Backspace removes the last character and Esc leaves the field.
+
 ## Password strength
 
 A meter under a password field that scores the password from too short to strong.
 
 ```c
+static char pw[64];
 cui_input(ui, "pw", pw, sizeof pw, .label = "Password", .password = true);
 int score = cui_password_strength(ui, pw);   /* 0 too short .. 4 strong */
 ```
+
+Returns the score from 0 to 4 and draws four segments with a word beside them: "Too short", "Weak", "Fair", "Good" or "Strong". `pw` is your string, the same buffer the field edits; it is only read, and `NULL` or an empty string scores 0 and shows no word. The score counts simple rules: one point each for 8 characters, for 12 characters, for mixing lower and upper case, for a digit and for any other character, capped at 4, and at 1 while the password is shorter than 8. It does not know common passwords, so enforce your real policy with the field's `error`. The meter uses a fixed internal id, so two meters in one id scope need a `cui_id_scope` each.
 
 ## Button group, copy and hold to confirm
 
@@ -683,6 +757,10 @@ if (cui_hold_button(ui, "Hold to delete", .icon = CUI_ICON_TRASH_2)) delete_ever
 
 The hold button fills while pressed (or while Space is held with keyboard focus) and fires once when full; let go early and it springs back. Options: `duration` (1.2 s), `icon`, `variant` (danger by default).
 
+`cui_button_group` is a scope that takes no options and returns nothing: each button inside still returns its own click. Buttons in a group are ghost buttons unless they set a `variant`, and share one outline. `cui_copy_button` returns true on the frame it is clicked, after it has put the text on the clipboard; its `id` keeps the check that shows for 1.6 seconds afterwards. `cui_hold_button` returns true once, on the frame the fill completes, and not again until the button is let go. Its label is also its identity, and `duration` is in seconds. Use the hold button where a slip would cost something, and a confirm button where a second click is enough.
+
+Keyboard: Tab moves through the buttons. Enter or Space presses a button in a group or the copy button, and holding either key fills the hold button.
+
 ## Timeline and progress ring
 
 A vertical list of events in order, and a ring that fills with a percentage.
@@ -695,6 +773,10 @@ cui_timeline_item(ui, "Deployed to production", .time = "2m ago", .description =
 cui_timeline_item(ui, "Build failed", .time = "3h ago", .icon = CUI_ICON_CIRCLE_ALERT, .tone = CUI_TONE_DANGER, .last = true);
 cui_progress_ring(ui, "Onboarding", 0.72f, 110);
 ```
+
+Neither returns anything or takes the pointer. `cui_timeline_item` draws one event: call it once for each event, in order, inside a column. The title is the only required text. `time` is text you format yourself, and `description` wraps under the title. `icon` goes in the round marker, a dot when not set, and `tone` colors the marker. Set `.last = true` on the final item, or its connector line runs on below it.
+
+`cui_progress_ring` takes a label, a fraction from 0 to 1 and a size in points. The fraction is clamped and shown in the middle as a whole percentage, the ring glides to a new value, and a size of 0 means 96. The label is also the ring's identity, so two rings with the same label in one scope need a key (`"Done##week"`).
 
 ## Reorderable list
 
@@ -712,5 +794,7 @@ if (cui_reorder_end(ui)) save_order(order);
 ```
 
 Press a row and drag: it lifts with a shadow and follows the pointer while the other rows glide out of the way. Dropping rewrites `order`. Buttons inside rows keep working, since a drag only starts after the pointer moves a few points.
+
+`cui_reorder_end` returns true on the frame a drop changes the order. `order` is your array of `count` item indices and must outlive the frame, which is why it is `static` above. The library only moves the numbers in it: your items stay where they are, and you read them through `order[i]`. `cui_reorder_item` takes the display position, not the item index. Rows are told apart by their item index, so each index must appear once. One list handles up to 256 rows.
 
 Keyboard: none yet. Rows are dragged with the pointer; buttons inside rows keep their own keys.

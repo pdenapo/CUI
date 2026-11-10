@@ -143,6 +143,7 @@ Linux needs the X11 development headers (`libx11-dev`). Windows and macOS need n
 | **Charts** | line, bar, donut, sparkline, gauge, candlestick, heatmap, treemap, radar, funnel, sankey, scatter |
 | **Planning** | kanban board, week and month calendars, gantt chart, node editor |
 | **Developer tools** | trace viewer, network waterfall, flame graph, dependency and commit graphs, CI pipeline, test explorer, regex tester, query builder |
+| **Instruments** | dot-matrix chart, chart annotations, event track on a time axis, readout, dot-matrix display |
 | **Conversation and AI** | chat, comments, composer, reasoning and tool calls, agent plan, sources and citations |
 | **Your own** | a canvas with a 2D drawing API, per-component state and spring animation |
 
@@ -243,6 +244,7 @@ Complete apps in [`examples/`](examples), each a single C file. They run in the 
 |---|---|
 | [`hello`](examples/hello.c) | The smallest app |
 | [`todo`](examples/todo.c) | The app the [tutorial](docs/tutorial.md) builds: a list, a filter, a dialog, saving to a file |
+| [`caffeine`](examples/caffeine.c) | The instruments together: a dot-matrix chart with annotations, cups you drag on a time axis, readouts and a dot-matrix verdict |
 | [`assistant`](examples/assistant.c) | AI assistant: reasoning, tool calls, sources, plan, composer with a model picker |
 | [`tracker`](examples/tracker.c) | Issue tracker: grouped list, custom status glyphs, detail pane, activity |
 | [`music`](examples/music.c) | Music player: cover art drawn on a canvas, track list, transport bar |
@@ -310,7 +312,7 @@ To use CUI inside an engine with your own window and renderer, see [Integration]
 ## Limitations
 
 - **No screen reader support.** There is no accessibility tree yet. This rules CUI out for apps that must be accessible to blind users.
-- **The keyboard does not reach everything.** Most components work from the keyboard and each one's page lists its keys. Eight still need a pointer: the rating, the histogram slider's handles, swipe actions, the reorderable list, the JSON viewer, the agent plan's steps, blame and the time histogram.
+- **The keyboard does not reach everything.** Most components work from the keyboard and each one's page lists its keys. Some parts still need a pointer: the rating, the histogram slider's handles, swipe actions, the reorderable list, the JSON viewer, the agent plan's steps, blame, the time histogram, and the choices inside the open time picker and color picker.
 - **Complex scripts are partial.** Text is UTF-8 with kerning and font fallback, and layouts mirror for right-to-left languages. Arabic-script shaping and bidirectional text are an optional, experimental build option for static text ([details](docs/integration.md#optional-arabic-script-text-shaping)). CJK works once you add a fallback font.
 - **Input methods compose in the system's window.** Committed text arrives; the text being composed is not drawn inline.
 - **No native Wayland backend.** Use the SDL2 or GLFW backend, or XWayland.
@@ -343,6 +345,8 @@ ctest --test-dir build --output-on-failure
 |---|---|
 | [Getting started](docs/getting-started.md) | Install, build, the frame loop, your first screens |
 | [Tutorial](docs/tutorial.md) | Build a small, complete app step by step |
+| [Building an app](docs/apps.md) | The window, when frames happen, what components return, threads, shipping |
+| [Recipes](docs/recipes.md) | Complete programs: a form, a sorted table, a background task, saved settings |
 | [Layout](docs/layout.md) | Rows, columns, sizes, alignment, grids, scrolling, split views |
 | [Components](docs/components.md) and [more](docs/components-more.md) | Every component: what it is, usage, options, keyboard |
 | [Theming](docs/theming.md) | Tokens, light and dark, accents, fonts, motion |
@@ -352,6 +356,7 @@ ctest --test-dir build --output-on-failure
 | [Rendering](docs/rendering.md) | The vertex format and the reference shader |
 | [Performance](docs/performance.md) | How memory and speed are tested, and the results |
 | [Function reference](https://yappologistic.github.io/CUI/#/reference) | Every public function with its signature, on the site |
+| [Questions](docs/faq.md) | What CUI is and is not, how it compares, what it cannot do |
 | [How CUI is built](docs/architecture.md) | The code map and the outline every component follows |
 | [Design principles](docs/design.md) | The visual rules every component follows |
 

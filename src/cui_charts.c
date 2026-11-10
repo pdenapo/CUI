@@ -262,6 +262,7 @@ static void cui__paint_xy_chart(cui_ctx *ui, cui_node *n, void *data) {
                 if (p->o.stacked) acc += s->values[i] * intro;
             }
         }
+        cui__paint_annotations(ui, p->o.annotations, p->o.annotation_count, plot, -0.5, npts - 0.5, lo, hi, plot.y, false);
         if (p->hover >= 0 && p->hover < npts) {
             float cx = plot.x + slot * (p->hover + 0.5f);
             cui__chart_tooltip(ui, p, plot, cx + slot * 0.25f, plot.y + plot.h * 0.4f, p->hover);
@@ -302,6 +303,7 @@ static void cui__paint_xy_chart(cui_ctx *ui, cui_node *n, void *data) {
         cui_draw_polyline(ui, line, ln, 2.0f, c, false);
     }
     cui_pop_clip(ui);
+    if (npts > 1) cui__paint_annotations(ui, p->o.annotations, p->o.annotation_count, plot, 0, npts - 1, lo, hi, plot.y, false);
     if (p->hover >= 0 && p->hover_t > 0.01f) {
         float hx = p->hx;
         cui_rect cl = { hx - 0.5f, plot.y, 1, plot.h };
@@ -391,6 +393,8 @@ static void cui__xy_chart(cui_ctx *ui, const char *id_str, const cui_series *ser
     p->o = *o;
     p->o.format = o->format ? cui__frame_strdup(ui, o->format, -1) : NULL;
     p->o.labels = NULL;
+    p->o.annotations = cui__copy_annotations(ui, o->annotations, o->annotation_count);
+    p->o.annotation_count = p->o.annotations ? o->annotation_count : 0;
     p->intro = st->intro.x;
     p->hover = st->hover_t > 0.01f ? st->hover : -1;
     p->hover_t = st->hover_t;

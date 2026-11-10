@@ -101,7 +101,7 @@ jobs:
           tag="${{ needs.release.outputs.tag }}"
           dir="cui-${tag#v}-examples-${{ matrix.name }}"
           mkdir "$dir"
-          for app in hello todo gallery dashboard settings notes mail tracker music finance assistant; do
+          for app in hello todo caffeine gallery dashboard settings notes mail tracker music finance assistant; do
             f=$(find build/examples -type f \( -name "$app" -o -name "$app.exe" \) | head -1)
             if [ -z "$f" ]; then echo "missing example: $app"; exit 1; fi
             cp "$f" "$dir/"

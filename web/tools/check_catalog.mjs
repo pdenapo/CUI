@@ -110,6 +110,18 @@ console.log(`types: ${nTyped} items with data or result structs (${nTypeTables} 
 console.log(`keyboard: ${nKey} items with a list (${nKeyLines} lines)`);
 console.log(`related: ${nRel} items with related links`);
 console.log(`no options table (${noOptions.length}): ${noOptions.join(', ') || 'none'}`);
+// links from one page to a guide's section land on a section that exists
+const guideSecs = new Set((C.guides || []).flatMap((g) => g.sections.map((x) => `${g.id}/${x.id}`)));
+const guideIds = new Set((C.guides || []).map((g) => g.id));
+const pages = [...items.map((it) => [it.id, it.html]), ...(C.guides || []).flatMap((g) => [[g.id, g.intro], ...g.sections.map((x) => [g.id, x.html])])];
+for (const [where, html] of pages) {
+  for (const m of (html || '').matchAll(/href="#\/guide\/([\w-]+)(?:\/([\w-]+))?"/g)) {
+    if (!guideIds.has(m[1])) bad(where, `link to a guide that does not exist: ${m[1]}`);
+    else if (m[2] && !guideSecs.has(`${m[1]}/${m[2]}`)) bad(where, `link to a section that does not exist: ${m[1]}/${m[2]}`);
+  }
+  for (const m of (html || '').matchAll(/href="#\/c\/([\w-]+)/g)) if (!C.items[m[1]]) bad(where, `link to a component page that does not exist: ${m[1]}`);
+}
+
 if (errors.length) {
   console.log(`\n${errors.length} problem(s):`);
   for (const e of errors) console.log('  ' + e);

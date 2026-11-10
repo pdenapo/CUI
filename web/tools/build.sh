@@ -84,7 +84,7 @@ link scenes "$OUT/obj/scenes_web.o"
 [[ "${1:-}" == "scenes" ]] && exit 0
 
 # 3. the gallery and the demo apps
-APPS=(gallery dashboard finance music mail notes settings tracker assistant todo hello)
+APPS=(gallery dashboard finance music mail notes settings tracker assistant todo caffeine hello)
 for app in "${APPS[@]}"; do
     objs=()
     srcs=("$ROOT/examples/$app.c"); [[ $app == hello ]] && srcs=("$HERE/host/hello_web.c")

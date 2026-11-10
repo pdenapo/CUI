@@ -66,16 +66,21 @@ CUI_API cui_ctx *cui_app_ui(cui_app *app);
 /* Creates the app, calls frame() until the window closes, destroys it. */
 CUI_API int cui_app_run(const cui_app_desc *desc, void (*frame)(cui_ctx *ui, void *user), void *user);
 
+/* The functions below take NULL for "the app that is running", which is how a
+ * cui_app_run callback reaches its window: cui_app_quit(NULL). */
+/* Ends the loop after the current frame: cui_app_frame returns false, cui_app_run returns. */
 CUI_API void cui_app_quit(cui_app *app);
 CUI_API void cui_app_set_title(cui_app *app, const char *title);
+/* The window's size in logical points (the same units as cui_app_desc.width). */
 CUI_API void cui_app_set_size(cui_app *app, int width, int height);
 CUI_API cui_vec2 cui_app_size(cui_app *app);
+
 /* Maximize the window on its current display. Safe right after
  * cui_app_create. No-op when the backend cannot (for example a
  * window manager that ignores EWMH, or a fixed-size window). */
 CUI_API void cui_app_maximize(cui_app *app);
 
-
+/* True when the software renderer is drawing (no usable OpenGL, or it was asked for). */
 CUI_API bool cui_app_is_software(cui_app *app);
 /* HWND, NSWindow*, X11 Window (cast to uintptr_t), SDL_Window* or GLFWwindow*. */
 CUI_API void *cui_app_native_window(cui_app *app);

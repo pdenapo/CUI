@@ -130,13 +130,21 @@ def doc_link(label, target, anchors):
         return f'<a href="#/c/{anchors[anchor]}">{label}</a>'
     doc = re.match(r"^(?:\.\./)?(?:docs/)?([\w-]+)\.md(?:#([\w-]+))?$", target)
     if doc and doc.group(1) in GUIDE_IDS:
-        return f'<a href="#/guide/{doc.group(1)}' + (f'/{doc.group(2)}' if doc.group(2) else '') + f'">{label}</a>'
+        if doc.group(2) and GUIDE_SECTIONS.get(doc.group(2), "").startswith(doc.group(1) + "/"):   # a section, or the section of a subsection
+            return f'<a href="#/guide/{GUIDE_SECTIONS[doc.group(2)]}">{label}</a>'
+        sec = re.sub(r"^\d+-", "", doc.group(2) or "")   # "## 7. Files and links" is the section files-and-links
+        return f'<a href="#/guide/{doc.group(1)}' + (f'/{sec}' if sec else '') + f'">{label}</a>'
     if doc and doc.group(1) in ("components", "components-more"):
         return f'<a href="#/components">{label}</a>'
-    repo = re.match(r"^\.\./([\w./-]+)$", target)   # a file or folder of the repository, from docs/
+    if target.startswith("#") and anchor in GUIDE_SECTIONS:   # a section of a guide, linked from inside it
+        return f'<a href="#/guide/{GUIDE_SECTIONS[anchor]}">{label}</a>'
+    repo = re.match(r"^\.\./([\w./-]+)(#[\w-]+)?$", target)   # a file or folder of the repository, from docs/
     if repo:
         kind = "blob" if "." in repo.group(1).rsplit("/", 1)[-1] else "tree"
-        return f'<a href="{REPO_URL}/{kind}/master/{repo.group(1)}" target="_blank" rel="noreferrer">{label}</a>'
+        return f'<a href="{REPO_URL}/{kind}/master/{repo.group(1)}{repo.group(2) or ""}" target="_blank" rel="noreferrer">{label}</a>'
+    if doc:   # a doc that is not a guide on the site, such as CONTRIBUTING.md or architecture.md
+        frag = f"#{doc.group(2)}" if doc.group(2) else ""
+        return f'<a href="{REPO_URL}/blob/master/docs/{doc.group(1)}.md{frag}" target="_blank" rel="noreferrer">{label}</a>'
     return f'<span class="doc-ref" title="{html.escape(target)}">{label}</span>'
 
 def inline(text, anchors):
@@ -165,8 +173,22 @@ def inline(text, anchors):
     return re.sub(r"\x00(\d+)\x00", lambda m: kept[int(m.group(1))], "".join(out))
 
 # the guide: docs/*.md in reading order (components have their own pages)
-GUIDES = ["getting-started", "tutorial", "layout", "theming", "icons", "custom-components", "integration", "rendering", "performance", "design"]
+GUIDES = ["getting-started", "tutorial", "apps", "recipes", "layout", "theming", "icons", "custom-components", "integration", "rendering", "performance", "faq", "design"]
 GUIDE_IDS = set(GUIDES)
+# each guide's section anchors (as GitHub makes them from the "## " headings), for links within a guide
+def guide_sections():
+    out = {}
+    anchor_of = lambda t: re.sub(r"[^\w\- ]", "", t.strip().lower()).replace(" ", "-")
+    for gid in GUIDES:
+        sec = None
+        for ln in open(f"{ROOT}/docs/{gid}.md", encoding="utf-8"):
+            if ln.startswith("## "):
+                sec = re.sub(r"^\d+-", "", anchor_of(ln[3:]))
+                out.setdefault(anchor_of(ln[3:]), f"{gid}/{sec}")
+            elif ln.startswith("### ") and sec:   # a subsection: the site opens its section
+                out.setdefault(anchor_of(ln[4:]), f"{gid}/{sec}")
+    return out
+GUIDE_SECTIONS = guide_sections()
 
 IMG_RE = re.compile(r"images/((?:components|showcase)/)?([\w\-]+?)(?:-dark)?\.png")
 
@@ -268,7 +290,7 @@ CATEGORIES = [
     ("basics", "Basics"), ("actions", "Actions"), ("inputs", "Inputs"), ("selection", "Selection"),
     ("pickers", "Pickers"), ("navigation", "Navigation"), ("overlays", "Overlays"), ("feedback", "Feedback"),
     ("data", "Data display"), ("charts", "Charts"), ("planning", "Planning"), ("social", "Conversation and media"),
-    ("motion", "Motion"), ("ai", "AI interfaces"), ("devtools", "Developer tools"),
+    ("motion", "Motion"), ("ai", "AI interfaces"), ("devtools", "Developer tools"), ("instruments", "Instruments"),
 ]
 MAIN_CAT = {
     "Text": "basics", "Badge, avatar and keycap": "basics", "Card and metric": "basics", "Image": "basics",
@@ -290,7 +312,7 @@ MORE_CAT = {
     "Feedback": "feedback", "Data": "data", "Code": "data", "Conversation": "social", "Media": "social",
     "Planning": "planning", "More charts": "charts", "Motion": "motion", "AI interfaces": "ai",
     "App chrome": "navigation",
-    "Tool panels": "data", "Developer tools": "devtools",
+    "Tool panels": "data", "Developer tools": "devtools", "Instruments": "instruments",
 }
 ITEM_CAT = {"Table of contents": "navigation"}
 # sections whose docs have no screenshot: the scene that shows them
@@ -332,6 +354,7 @@ APPS = [
     ("tracker", "Tracker", "Orbit: an issue tracker with boards and filters.", "examples/tracker.c"),
     ("assistant", "Assistant", "Muse: an AI assistant with reasoning, tools and attachments.", "examples/assistant.c"),
     ("todo", "To do", "The app the tutorial builds: a list you add to, tick off, filter and clear, in about 130 lines.", "examples/todo.c"),
+    ("caffeine", "Caffeine", "How much caffeine is still in you at bedtime: drag the cups, and the dot chart, the peak and the verdict follow.", "examples/caffeine.c"),
 ]
 
 # ---------------------------------------------------------------- options (from the header)
@@ -437,6 +460,9 @@ def fill_docs(fields):
 CORE_TYPES = {"cui_ctx", "cui_rect", "cui_vec2", "cui_color", "cui_size", "cui_corners", "cui_box", "cui_texture",
               "cui_font", "cui_id", "cui_date", "cui_key_combo"}
 
+# structs a page is about that no function of the page takes directly
+EXTRA_TYPES = {"chart-annotations": ["cui_chart_annotation"]}
+
 def item_types(it, owners):
     """The structs an item's own functions take (data) and return (results), with the
     enums their fields use: what a caller has to fill in and read back."""
@@ -457,6 +483,7 @@ def item_types(it, owners):
         out.append({"struct": st, "role": role, "fn": [fn], "line": DATA_STRUCTS[st]["line"],
                     "fields": [{"name": f["name"], "type": f["type"], "doc": f["doc"]} for f in fields], "enums": enums})
     nested = []
+    for st in EXTRA_TYPES.get(it["id"], []): add(st, "data", st)
     for a in it["apis"]:
         if it["id"] not in owners.get(a, set()): continue
         for c in [a, a + "_ex", a + "_begin", a + "_begin_ex"]:
@@ -636,7 +663,7 @@ DISPLAY_ONLY = {
     "progress-meter-spinner-and-skeleton", "timeline-and-progress-ring", "charts", "heatmap",
     "calendar-heatmap", "treemap-and-radar", "funnel-split-bar-and-waffle", "sankey",
     "bar-list-and-activity-rings", "scatter-and-bubble", "radial-gauge", "presence-counter-and-ticker",
-    "text-effects", "loaders", "chat", "uptime-bars"
+    "text-effects", "loaders", "chat", "uptime-bars", "readout", "dot-matrix-display", "chart-annotations"
 }
 
 def keyboard_lines(body_html):
@@ -757,14 +784,15 @@ SCENE_GLOBALS = [
 ]
 def scene_program(title, sc):
     src = sc["source"].strip()
-    m = re.match(r"SCENE\(\w+\)\s*\{\n", src)
+    m = re.search(r"^SCENE\(\w+\)\s*\{\n", src, re.M)   # after any comment that leads the scene
     if not m or re.search(r"^(?:static|SCENE)\b", src[m.end():], re.M): return None   # more than the one scene body
     body = src[m.end():src.rindex("}")].rstrip()
     body = re.sub(r"\bUPTO\(([^()]*)\)", r".width = CUI_FILL, .max_width = \1", body)
     body = re.sub(r"\bFLEX\(([^(),]*),\s*([^()]*)\)", r".width = CUI_FILL, .min_width = \1, .max_width = \2", body)
     used = lambda *names: any(re.search(rf"\b{n}\s*\(", body) for n in names)
     inc = ["#include <cui/cui.h>", "#include <cui/cui_app.h>"]
-    if used("sinf", "cosf", "sqrtf", "fabsf", "powf", "floorf", "fmodf", "sin", "cos"): inc.append("#include <math.h>")
+    if used("sinf", "cosf", "sqrtf", "fabsf", "powf", "floorf", "fmodf", "sin", "cos", "expf", "exp", "logf", "log", "roundf", "lround", "fminf", "fmaxf"):
+        inc.append("#include <math.h>")
     if used("snprintf", "sprintf", "printf"): inc.append("#include <stdio.h>")
     if used("rand", "abs", "malloc", "free", "atoi"): inc.append("#include <stdlib.h>")
     if used("strlen", "strcmp", "strcpy", "strncpy", "memcpy", "memset", "strstr", "memmove"): inc.append("#include <string.h>")

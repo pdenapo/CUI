@@ -1583,6 +1583,62 @@ static void page_devtools2(cui_ctx *ui) {
     devtools2_histogram(ui);
 }
 
+/* ---- instruments ---------------------------------------------------------- */
+
+/* one dose of caffeine `t` hours after it, in mg: absorbed in about 45 minutes, then a half-life of five hours */
+static float instrument_dose(double t) {
+    if (t <= 0) return 0;
+    double ke = log(2.0) / 5.0, ka = log(2.0) / 0.25;
+    return (float)(95 * ka / (ka - ke) * (exp(-ke * t) - exp(-ka * t)));
+}
+
+static void page_instruments(cui_ctx *ui) {
+    static double cups[8] = { 8, 10.75, 12.25 };
+    static int count = 3, selected = 2;
+    static float curve[8][97];
+    double peak = 0, peak_at = 6, bed = 0;
+    for (int k = 0; k < 97; k++) {
+        double at = 6 + 24.0 * k / 96, total = 0;
+        for (int c = 0; c < count; c++) { curve[c][k] = instrument_dose(at - cups[c]); total += curve[c][k]; }
+        if (total > peak) { peak = total; peak_at = at; }
+    }
+    for (int c = 0; c < count; c++) bed += instrument_dose(23 - cups[c]);
+    char peak_text[32], peak_mg[16], peak_time[16], bed_text[32], big[16];
+    snprintf(peak_text, sizeof peak_text, "PEAK %.0f MG", peak);
+    snprintf(peak_mg, sizeof peak_mg, "%.0f", peak);
+    snprintf(peak_time, sizeof peak_time, "%02d:%02d", (int)peak_at, (int)lround((peak_at - (int)peak_at) * 60) % 60);
+    snprintf(bed_text, sizeof bed_text, "%.0f MG STILL IN YOU", bed);
+    snprintf(big, sizeof big, "%.0f", bed);
+
+    section(ui, "Readouts", "A label, a value with its unit, and a line of context, in the monospaced font.");
+    cui_row(ui, .gap = 40, .wrap = true, .align = CUI_ALIGN_END) {
+        cui_readout(ui, "AT BED", big, .unit = "MG", .size = CUI_SIZE_LG, .accent = bed > 50, .detail = bed > 50 ? "OVER THE 50 MG LINE" : "UNDER THE 50 MG LINE");
+        cui_readout(ui, "PEAK", peak_mg, .unit = "MG", .detail = peak_time);
+        cui_readout(ui, "CUPS", count == 1 ? "1" : count == 2 ? "2" : count == 3 ? "3" : count == 4 ? "4" : "5+", .size = CUI_SIZE_SM, .detail = "95 MG EACH");
+    }
+    section(ui, "Dot-matrix chart and event track", "Drag a cup along the axis, click the chart to add one, double-click a cup to remove it.");
+    cui_dot_series series[8];
+    for (int c = 0; c < count; c++) series[c] = (cui_dot_series){ curve[c], NULL, c == selected };
+    cui_chart_annotation notes[3] = { { CUI_ANNOTATION_Y, 0, 50, "50", NULL, false },
+                                      { CUI_ANNOTATION_X, 23, 0, "BED 23:00", bed_text, false },
+                                      { CUI_ANNOTATION_X, peak_at, 0, peak_text, peak_time, false } };
+    cui_column(ui, .width = CUI_FILL, .gap = 0) {
+        cui_dot_chart_result r = cui_dot_chart(ui, "caffeine", series, count, 97, .height = 240, .x_min = 6, .x_max = 30,
+                                               .x_units = CUI_AXIS_HOURS, .min = 0, .max = 260, .unit = "MG", .no_axis = true,
+                                               .annotations = notes, .annotation_count = count ? 3 : 1);
+        if (r.clicked && count < 8) {
+            double t = floor(r.x * 4 + 0.5) / 4;
+            int at = count++;
+            while (at > 0 && cups[at - 1] > t) { cups[at] = cups[at - 1]; at--; }
+            cups[at] = t;
+            selected = at;
+        }
+        cui_event_track(ui, "cups", cups, &count, 8, 6, 30, .step = 0.25, .units = CUI_AXIS_HOURS, .label_step = 6, .selected = &selected);
+    }
+    section(ui, "Dot-matrix display", "Text in a 5 by 7 dot font; a long line can scroll.");
+    cui_dot_display(ui, bed > 50 ? "OVER THE LINE AT BEDTIME" : "UNDER THE LINE AT BEDTIME", .pitch = 3, .accent = bed > 50);
+}
+
 /* ---- registry ------------------------------------------------------------ */
 
 typedef struct { const char *name, *icon; void (*fn)(cui_ctx *ui); } more_page;
@@ -1605,6 +1661,7 @@ static const more_page pages[] = {
     { "Files", CUI_ICON_FOLDER, page_files },
     { "Developer tools", CUI_ICON_SQUARE_TERMINAL, page_devtools },
     { "More developer tools", CUI_ICON_BUG, page_devtools2 },
+    { "Instruments", CUI_ICON_CHART_LINE, page_instruments },
 };
 
 int gallery_more_count(void) { return (int)(sizeof pages / sizeof pages[0]); }

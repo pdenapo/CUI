@@ -3454,6 +3454,65 @@ static void scene_tw_calendar(cui_ctx *ui, int f) {
     stage(ui, &look_plain, tw_calendar_body);
 }
 
+/* ---- instruments ---- */
+
+SCENE(dot_chart) {
+    /* a week of requests per hour: the six days before in grey, today in the accent */
+    static float base[168], today[168];
+    for (int i = 0; i < 168; i++) {
+        float h = (float)(i % 24), day = (float)(i / 24);
+        float load = 18 + 42 * expf(-(h - 14) * (h - 14) / 18.0f) + 6 * sinf(day * 1.7f + h * 0.4f);
+        base[i] = i < 144 ? load : 0;
+        today[i] = i >= 144 ? load * 1.25f : 0;
+    }
+    cui_dot_series series[2] = { { base, "Last six days", false }, { today, "Today", true } };
+    cui_box(ui, UPTO(860))
+        cui_dot_chart(ui, "requests", series, 2, 168, .x_min = 0, .x_max = 168, .x_step = 24, .x_format = "%.0f h",
+                      .height = 220, .unit = "REQ/S");
+}
+
+SCENE(chart_annotations) {
+    /* response times from 14:00 to 15:00, one sample a minute; x is in hours */
+    static float wait[61];
+    for (int i = 0; i < 61; i++) wait[i] = 120 + 90 * sinf(i * 0.21f) + (i > 38 && i < 46 ? 260 : 0) + (float)(i % 7) * 6;
+    const cui_chart_annotation notes[] = {
+        { CUI_ANNOTATION_Y, 0, 300, "SLO", NULL, true },
+        { CUI_ANNOTATION_X, 14 + 39 / 60.0, 0, "DEPLOY 4.12", "14:39", false },
+        { CUI_ANNOTATION_X, 14 + 46 / 60.0, 0, "ROLLBACK", "14:46", false },
+        { CUI_ANNOTATION_POINT, 14 + 42 / 60.0, 515, "PEAK 515 MS", NULL, false },
+    };
+    cui_dot_series series[1] = { { wait, "Wait", false } };
+    cui_box(ui, UPTO(820))
+        cui_dot_chart(ui, "wait", series, 1, 61, .x_min = 14, .x_max = 15, .x_units = CUI_AXIS_HOURS, .x_step = 10 / 60.0,
+                      .height = 240, .min = 0, .max = 600, .unit = "MS", .annotations = notes, .annotation_count = 4);
+}
+
+SCENE(event_track) {
+    static double doses[8] = { 7.5, 13, 19.25 };
+    static int count = 3, selected = 1;
+    cui_column(ui, .gap = 10, UPTO(720)) {
+        cui_text(ui, "DOSES TODAY", .font = CUI_FONT_MONO, .color = CUI_COLOR_TEXT_MUTED, .size = 11);
+        cui_event_track(ui, "doses", doses, &count, 8, 6, 30, .step = 0.25, .units = CUI_AXIS_HOURS, .label_step = 3, .selected = &selected);
+    }
+}
+
+SCENE(readouts) {
+    cui_row(ui, .gap = 44, .wrap = true, .align = CUI_ALIGN_END) {
+        cui_readout(ui, "STILL IN YOU AT 23:00", "54", .unit = "MG", .detail = "UNDER THE LINE BY 00:10", .size = CUI_SIZE_LG);
+        cui_readout(ui, "PEAK", "203", .unit = "MG", .detail = "13:06");
+        cui_readout(ui, "HALF-LIFE", "5.0", .unit = "H", .detail = "ADULT AVERAGE", .size = CUI_SIZE_SM);
+        cui_readout(ui, "OVER THE LINE", "2", .unit = "CUPS", .detail = "AFTER 14:00", .size = CUI_SIZE_SM, .accent = true);
+    }
+}
+
+SCENE(dot_display) {
+    cui_column(ui, .gap = 18) {
+        cui_dot_display(ui, "23:41:07", .pitch = 6);
+        cui_dot_display(ui, "LAST CUP BY 10:45", .pitch = 3);
+        cui_dot_display(ui, "21.5\xc2\xb0" "C  \xc2\xb7  48% RH", .pitch = 3, .accent = true);
+    }
+}
+
 typedef struct { const char *name; scene_fn fn; float w, h; bool dark_too; bool dark_only; cui_accent accent; } scene;
 
 static void render(const char *dir, const scene *s, bool dark, cui_sw_renderer *sw) {
@@ -3963,6 +4022,9 @@ int main(int argc, char **argv) {
         { "docking", scene_docking, 960, 560, true },
         { "toolbar", scene_toolbar, 640, 370, true }, { "status-bar", scene_status_bar, 820, 160, true },
         { "document-tabs", scene_document_tabs, 720, 230, true },
+        { "dot-chart", scene_dot_chart, 900, 280, true, false, CUI_ACCENT_BLUE }, { "chart-annotations", scene_chart_annotations, 860, 300, true, false, CUI_ACCENT_BLUE },
+        { "event-track", scene_event_track, 760, 130, true, false, CUI_ACCENT_BLUE }, { "readouts", scene_readouts, 860, 160, true, false, CUI_ACCENT_BLUE },
+        { "dot-display", scene_dot_display, 420, 200, true, false, CUI_ACCENT_BLUE },
         { "tw-studio", scene_tw_studio, 1200, 675, true, false, CUI_ACCENT_NEUTRAL }, { "tw-audio", scene_tw_audio, 960, 540, true, false, CUI_ACCENT_NEUTRAL },
         { "tw-markets", scene_tw_markets, 1200, 675, true, false, CUI_ACCENT_NEUTRAL }, { "tw-calendar", scene_tw_calendar, 1200, 675, true, false, CUI_ACCENT_NEUTRAL },
     };

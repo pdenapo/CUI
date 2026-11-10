@@ -115,22 +115,29 @@ void cui_app_destroy(cui_app *app) {
     free(app);
 }
 
-cui_ctx *cui_app_ui(cui_app *app) { return app->ui; }
-void cui_app_quit(cui_app *app) { app->running = false; }
-bool cui_app_is_software(cui_app *app) { return app->software; }
-void *cui_app_native_window(cui_app *app) { return cui__plat_native(app); }
+/* NULL means the app that is running: a cui_app_run callback has no other way to name it */
+static cui_app *cui__app_or_current(cui_app *app) { return app ? app : cui__current_app; }
+
+cui_ctx *cui_app_ui(cui_app *app) { app = cui__app_or_current(app); return app ? app->ui : NULL; }
+void cui_app_quit(cui_app *app) { app = cui__app_or_current(app); if (app) app->running = false; }
+bool cui_app_is_software(cui_app *app) { app = cui__app_or_current(app); return app && app->software; }
+void *cui_app_native_window(cui_app *app) { app = cui__app_or_current(app); return app ? cui__plat_native(app) : NULL; }
 const char *cui_app_backend(cui_app *app) { (void)app; return cui__plat_name(); }
 
 void cui_app_set_title(cui_app *app, const char *title) {
+    app = cui__app_or_current(app);
+    if (!app) return;
     snprintf(app->title, sizeof app->title, "%s", title ? title : "");
     cui__plat_set_title(app, app->title);
 }
 
-void cui_app_set_size(cui_app *app, int w, int h) { cui__plat_set_size(app, w, h); }
+void cui_app_set_size(cui_app *app, int w, int h) { app = cui__app_or_current(app); if (app) cui__plat_set_size(app, w, h); }
 
 cui_vec2 cui_app_size(cui_app *app) {
     float w, h, s;
     int fw, fh;
+    app = cui__app_or_current(app);
+    if (!app) { cui_vec2 none = { 0, 0 }; return none; }
     cui__plat_metrics(app, &w, &h, &s, &fw, &fh);
     cui_vec2 v = { w, h };
     return v;

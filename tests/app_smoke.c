@@ -35,9 +35,14 @@ int main(int argc, char **argv) {
         if (frame % 20 == 0) printf("frame %d\n", frame);
         if (frame == 110) t0 = cui_time(ui);
         if (frame == 149) t1 = cui_time(ui);
-        if (++frame >= 150) break;
+        /* NULL names the running app, as a cui_app_run callback has to: quit that way */
+        if (++frame == 150) { cui_app_set_title(NULL, "CUI smoke test, done"); cui_app_quit(NULL); }
+        if (frame > 160) break;
     }
-    cui_vec2 sz = cui_app_size(app);
+    bool quit_by_null = frame == 150;
+    cui_vec2 sz = cui_app_size(app), sz_null = cui_app_size(NULL);
+    bool null_ok = quit_by_null && sz.x == sz_null.x && sz.y == sz_null.y && cui_app_ui(NULL) == cui_app_ui(app);
+    printf("NULL as the running app: %s\n", null_ok ? "ok" : "FAILED");
     const cui_draw_data *dd = cui_get_draw_data(cui_app_ui(app));
     int w = dd->width_px, h = dd->height_px;
     unsigned char *px = malloc((size_t)w * h * 4);
@@ -50,5 +55,5 @@ int main(int argc, char **argv) {
     double fps = t1 > t0 ? 39.0 / (t1 - t0) : 0;
     bool paced = fps > 0 && fps < 250;
     printf("animation: %.0f frames per second%s\n", fps, paced ? "" : " (not paced)");
-    return (ok && switched && paced) ? 0 : 1;
+    return (ok && switched && paced && null_ok) ? 0 : 1;
 }
