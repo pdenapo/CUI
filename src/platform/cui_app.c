@@ -331,5 +331,9 @@ bool cui_app_file_dialog(cui_app *app, const cui_file_dialog_opts *opts, char *o
 bool cui_app_open_url(const char *url) { return url && *url && cui__plat_open_url(url); }
 
 void cui_app_maximize(cui_app *app) {
-    if (app) cui__plat_maximize(app);
+    /* A fixed-size window cannot be maximized; honoring the request on a
+     * backend that still has a maximize button (or asking Win32 to show a
+     * maximized window whose borders were removed at creation) would break
+     * the public contract that this is a no-op for fixed-size windows. */
+    if (app && !app->desc.fixed_size) cui__plat_maximize(app);
 }

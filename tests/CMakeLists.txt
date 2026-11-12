@@ -47,7 +47,6 @@ if(CUI_WITH_APP)
             target_link_libraries(cui_app_smoke PRIVATE ${X11_LIBRARIES})
         endif()
     endif()
->>>>>>> 6a13ed2dc19c28dcd44a0d16111867bc317945ec
 endif()
 
 add_executable(cui_bench bench.c ../examples/gallery_ui.c ../examples/gallery_more.c)

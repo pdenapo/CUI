@@ -4,6 +4,7 @@
 #include <cui/cui_app.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 int main(void) {
@@ -38,12 +39,27 @@ int main(void) {
     printf("size before=%.0fx%.0f after=%.0fx%.0f frames=%d\n",
            before.x, before.y, after.x, after.y, frames);
 
+    /* Maximize is honored by the common window managers and by the native
+     * backends, so on those a maximized window must be larger than before.
+     * On an unknown/ignoring WM we can only require that it did not shrink. */
+    const char *backend = cui_app_backend(app);
+    const char *desktop = getenv("XDG_CURRENT_DESKTOP");
+    int supported = (backend && (strcmp(backend, "win32") == 0 ||
+                                 strcmp(backend, "cocoa") == 0)) ||
+                    (desktop && (strstr(desktop, "MATE") || strstr(desktop, "GNOME") ||
+                                 strstr(desktop, "KDE") || strstr(desktop, "XFCE") ||
+                                 strstr(desktop, "CINNAMON") || strstr(desktop, "UNITY") ||
+                                 strstr(desktop, "LXQT") || strstr(desktop, "LXDE")));
+    printf("maximize_supported=%d\n", supported);
+
     cui_app_destroy(app);
 
-    /* Maximize should not shrink the window. On some WMs the size update
-     * is async; allow equality if the WM ignored the request. */
     if (after.x + 1.0f < before.x || after.y + 1.0f < before.y) {
         fprintf(stderr, "fail: window shrank after maximize\n");
+        return 1;
+    }
+    if (supported && !(after.x > before.x + 1.0f || after.y > before.y + 1.0f)) {
+        fprintf(stderr, "fail: window did not grow after maximize\n");
         return 1;
     }
     return 0;
