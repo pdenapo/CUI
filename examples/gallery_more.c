@@ -750,15 +750,16 @@ static void page_planning(cui_ctx *ui) {
     int ev = cui_week_calendar(ui, "week", cui_date_from_days(monday), events, (int)(sizeof events / sizeof events[0]), .start_hour = 8, .end_hour = 19, .height = CUI_PX(420));
     if (ev >= 0) cui_toast(ui, events[ev].title, .description = events[ev].detail);
 
-    section(ui, "Gantt", "Drag bars to reschedule, pull either end to change the length. Arrows follow dependencies.");
+    section(ui, "Gantt", "Drag bars to reschedule, pull either end to change the length. Curves follow dependencies.");
     static cui_gantt_task tasks[] = {
-        { "Research", "Maya Okafor", 0, 5, 1, CUI_TONE_TEAL, -1, false },
-        { "Wireframes", "Aiko Tanaka", 4, 10, 1, CUI_TONE_TEAL, 0, false },
-        { "Design system", "Rosa Delgado", 8, 17, 0.7f, CUI_TONE_TEAL, 1, false },
-        { "Core engine", "Jonas Berg", 6, 20, 0.55f, CUI_TONE_INFO, 0, false },
-        { "Platform backends", "Daniel Mensah", 14, 26, 0.2f, CUI_TONE_TEAL, 3, false },
-        { "Beta", NULL, 27, 27, 0, CUI_TONE_WARNING, 4, true },
-        { "Docs and launch", "Priya Nair", 28, 36, 0, CUI_TONE_SUCCESS, 5, false },
+        /* no tones: each bar takes its state's color, worked out from its progress and today */
+        { "Research", "Maya Okafor", 0, 5, 1, 0, -1, false },
+        { "Wireframes", "Aiko Tanaka", 4, 10, 1, 0, 0, false },
+        { "Design system", "Rosa Delgado", 8, 17, 0.7f, 0, 1, false },
+        { "Core engine", "Jonas Berg", 6, 20, 0.55f, 0, 0, false },
+        { "Platform backends", "Daniel Mensah", 14, 26, 0.2f, 0, 3, false },
+        { "Beta", NULL, 27, 27, 0, 0, 4, true },
+        { "Docs and launch", "Priya Nair", 28, 36, 0, 0, 5, false },
     };
     cui_date origin = cui_date_from_days(monday - 7);
     int tk = cui_gantt(ui, "plan", tasks, (int)(sizeof tasks / sizeof tasks[0]), origin, 42, .today = 7 + (td - monday));
@@ -891,11 +892,11 @@ static void page_viz(cui_ctx *ui) {
         cui_card(ui, .pad = 18, .width = CUI_FILL) {
             cui_scatter_chart(ui, "scatter", ss, 2, .height = 300, .x_label = "Nodes", .y_label = "Frame time (ms)", .y_format = "%.2f");
         }
-        static const cui_gauge_band bands[] = { { 60, CUI_TONE_SUCCESS }, { 85, CUI_TONE_WARNING }, { 100, CUI_TONE_DANGER } };
+        static const cui_gauge_band bands[] = { { 60, CUI_TONE_SUCCESS, "Normal" }, { 85, CUI_TONE_WARNING, "Busy" }, { 100, CUI_TONE_DANGER, "Overloaded" } };
         cui_card(ui, .pad = 18, .width = CUI_FILL, .dir = CUI_ROW, .wrap = true, .gap = 24, .align = CUI_ALIGN_CENTER) {
             cui_radial_gauge(ui, "cpu", 64, 0, 100, .unit = "%", .label = "CPU", .bands = bands, .band_count = 3, .size = 180);
             cui_radial_gauge(ui, "temp", 71, 20, 100, .unit = "C", .label = "GPU temperature", .show_target = true, .target = 85, .size = 180);
-            cui_radial_gauge(ui, "mem", 0.62f * 32, 0, 32, .format = "%.1f", .unit = "GB", .label = "Memory", .no_needle = true, .ticks = -1, .size = 150);
+            cui_radial_gauge(ui, "mem", 0.62f * 32, 0, 32, .format = "%.1f", .unit = "GB", .label = "Memory", .style = CUI_GAUGE_RING, .detail = "of 32 GB", .size = 150);
         }
         enum { NC = 2000 };
         static cui_candle candles[NC];
@@ -1010,7 +1011,7 @@ static void page_motion(cui_ctx *ui) {
 
 static void page_ai(cui_ctx *ui) {
     static char draft[512] = "";
-    static int model = 0, vote = 0, orb_state = 1, removed = -1;
+    static int model = 0, vote = 0, removed = -1;
     static bool busy = false;
     static double started = -1;
     static const char *files[] = { "quarterly-report.pdf", "metrics.csv" };
@@ -1077,13 +1078,6 @@ static void page_ai(cui_ctx *ui) {
                 { "Check the citations", NULL, CUI_TASK_PENDING },
             };
             cui_agent_plan(ui, "plan", steps, 5, .title = "Research plan");
-            section(ui, "Voice", "Idle, listening, thinking and speaking.");
-            cui_column(ui, .align = CUI_ALIGN_CENTER, .gap = 12, .width = CUI_FILL) {
-                float lvl = 0.35f + 0.35f * sinf((float)now * 5.1f) * sinf((float)now * 1.7f);
-                if (cui_voice_orb(ui, "orb", (cui_voice_state)orb_state, lvl, .size = 170)) orb_state = orb_state == 1 ? 0 : 1;
-                static const char *states[] = { "Idle", "Listening", "Thinking", "Speaking" };
-                cui_segmented(ui, "orb-state", states, 4, &orb_state, .size = CUI_SIZE_SM);
-            }
             section(ui, "Suggestions", "Ways to start.");
             static const cui_prompt_suggestion sugg[] = {
                 { CUI_ICON_CODE, "Explain this code", "Walk through what it does" },
@@ -1583,6 +1577,402 @@ static void page_devtools2(cui_ctx *ui) {
     devtools2_histogram(ui);
 }
 
+/* ---- instruments ---------------------------------------------------------- */
+
+/* one dose of caffeine `t` hours after it, in mg: absorbed in about 45 minutes, then a half-life of five hours */
+static float instrument_dose(double t) {
+    if (t <= 0) return 0;
+    double ke = log(2.0) / 5.0, ka = log(2.0) / 0.25;
+    return (float)(95 * ka / (ka - ke) * (exp(-ke * t) - exp(-ka * t)));
+}
+
+static void page_instruments(cui_ctx *ui) {
+    static double cups[8] = { 8, 10.75, 12.25 };
+    static int count = 3, selected = 2;
+    static float curve[8][97];
+    double peak = 0, peak_at = 6, bed = 0;
+    for (int k = 0; k < 97; k++) {
+        double at = 6 + 24.0 * k / 96, total = 0;
+        for (int c = 0; c < count; c++) { curve[c][k] = instrument_dose(at - cups[c]); total += curve[c][k]; }
+        if (total > peak) { peak = total; peak_at = at; }
+    }
+    for (int c = 0; c < count; c++) bed += instrument_dose(23 - cups[c]);
+    char peak_text[32], peak_mg[16], peak_time[16], bed_text[32], big[16];
+    snprintf(peak_text, sizeof peak_text, "PEAK %.0f MG", peak);
+    snprintf(peak_mg, sizeof peak_mg, "%.0f", peak);
+    snprintf(peak_time, sizeof peak_time, "%02d:%02d", (int)peak_at, (int)lround((peak_at - (int)peak_at) * 60) % 60);
+    snprintf(bed_text, sizeof bed_text, "%.0f MG STILL IN YOU", bed);
+    snprintf(big, sizeof big, "%.0f", bed);
+
+    section(ui, "Readouts", "A label, a value with its unit, and a line of context, in the monospaced font.");
+    cui_row(ui, .gap = 40, .wrap = true, .align = CUI_ALIGN_END) {
+        cui_readout(ui, "AT BED", big, .unit = "MG", .size = CUI_SIZE_LG, .accent = bed > 50, .detail = bed > 50 ? "OVER THE 50 MG LINE" : "UNDER THE 50 MG LINE");
+        cui_readout(ui, "PEAK", peak_mg, .unit = "MG", .detail = peak_time);
+        cui_readout(ui, "CUPS", count == 1 ? "1" : count == 2 ? "2" : count == 3 ? "3" : count == 4 ? "4" : "5+", .size = CUI_SIZE_SM, .detail = "95 MG EACH");
+    }
+    section(ui, "Dot-matrix chart and event track", "Drag a cup along the axis, click the chart to add one, double-click a cup to remove it.");
+    cui_dot_series series[8];
+    for (int c = 0; c < count; c++) series[c] = (cui_dot_series){ curve[c], NULL, c == selected };
+    cui_chart_annotation notes[3] = { { CUI_ANNOTATION_Y, 0, 50, "50", NULL, false },
+                                      { CUI_ANNOTATION_X, 23, 0, "BED 23:00", bed_text, false },
+                                      { CUI_ANNOTATION_X, peak_at, 0, peak_text, peak_time, false } };
+    cui_column(ui, .width = CUI_FILL, .gap = 0) {
+        cui_dot_chart_result r = cui_dot_chart(ui, "caffeine", series, count, 97, .height = 240, .x_min = 6, .x_max = 30,
+                                               .x_units = CUI_AXIS_HOURS, .min = 0, .max = 260, .unit = "MG", .no_axis = true,
+                                               .annotations = notes, .annotation_count = count ? 3 : 1);
+        if (r.clicked && count < 8) {
+            double t = floor(r.x * 4 + 0.5) / 4;
+            int at = count++;
+            while (at > 0 && cups[at - 1] > t) { cups[at] = cups[at - 1]; at--; }
+            cups[at] = t;
+            selected = at;
+        }
+        cui_event_track(ui, "cups", cups, &count, 8, 6, 30, .step = 0.25, .units = CUI_AXIS_HOURS, .label_step = 6, .selected = &selected);
+    }
+    section(ui, "Dot-matrix display", "Text in a 5 by 7 dot font; a long line can scroll.");
+    cui_dot_display(ui, bed > 50 ? "OVER THE LINE AT BEDTIME" : "UNDER THE LINE AT BEDTIME", .pitch = 3, .accent = bed > 50);
+}
+
+/* ---- creative controls ----------------------------------------------- */
+
+static void page_creative(cui_ctx *ui) {
+    static const char *const tag_names[] = { "Pending", "In progress", "Submitted", "In review", "Success", "Failed", "Expired" };
+    static bool tag_gone[7];
+    static float coffee = 0.37f, train = 0.8f;
+    static float hue = 190, kelvin = 5600, opacity = 0.72f;
+    static bool picking;
+    static int variations = 3, generated = 0;
+    static cui_color palette[5] = { CUI_RGB(0xeef0f5), CUI_RGB(0x5c6370), CUI_RGB(0x37c6d0), CUI_RGB(0x1f3a5f), CUI_RGB(0xf2bd68) };
+    static bool locked[5];
+    static uint32_t palette_seed = 7;
+    static int aspect = 1, background = 0, format = 0, saved_as = -1;
+    static uint32_t seed = 1234567890u;
+    static bool seed_fixed;
+
+    section(ui, "Status tag", "An icon, a label and a tinted fill for each state. Click a small tag to remove it.");
+    cui_row(ui, .gap = 8, .wrap = true) {
+        for (int k = 0; k < 7; k++) cui_status_tag(ui, tag_names[k], (cui_tag_status)k);
+    }
+    cui_row(ui, .gap = 6, .wrap = true, .align = CUI_ALIGN_CENTER) {
+        bool any = false;
+        for (int k = 0; k < 7; k++) {
+            if (tag_gone[k]) continue;
+            any = true;
+            if (cui_status_tag(ui, tag_names[k], (cui_tag_status)k, .size = CUI_SIZE_SM, .removable = true)) tag_gone[k] = true;
+        }
+        if (!any && cui_button(ui, "Bring them back", .size = CUI_SIZE_SM, .variant = CUI_BUTTON_GHOST)) memset(tag_gone, 0, sizeof tag_gone);
+    }
+
+    section(ui, "Ratio slider", "Two named parts with a bar between them. Drag it or use the arrow keys (Shift for steps of ten).");
+    cui_column(ui, .gap = 12, .width = CUI_FILL) {
+        cui_ratio_slider(ui, "COFFEE", "MILK", &coffee, .tone = CUI_TONE_WARNING);
+        cui_ratio_slider(ui, "TRAIN", "TEST", &train, .tone = CUI_TONE_INFO);
+    }
+
+    section(ui, "Gradient and step sliders", "The track is the value: a hue, a white balance, an opacity. Step sliders snap to a few stops.");
+    cui_box(ui, .dir = CUI_GRID, .columns = 2, .min_column_width = 260, .gap = 12, .width = CUI_FILL) {
+        cui_gradient_slider(ui, "Hue", &hue, 0, 360, .swatch = true);
+        if (cui_gradient_slider(ui, "White balance", &kelvin, 2500, 10000, .track = CUI_GRADIENT_TEMPERATURE, .step = 100,
+                                .tool = CUI_ICON_TARGET, .tool_tooltip = "Pick from image", .tool_on = picking) & CUI_WELL_ACTION)
+            picking = !picking;
+        cui_gradient_slider(ui, "Opacity", &opacity, 0, 1, .track = CUI_GRADIENT_OPACITY, .color = CUI_RGB(0x2bb8a6));
+        char made[48];
+        snprintf(made, sizeof made, "%d \xc2\xb7 generated %d times", variations, generated);
+        if (cui_step_slider(ui, "Variations", &variations, 1, 4, .tool = CUI_ICON_REFRESH_CW, .tool_tooltip = "Generate",
+                            .value = generated ? made : NULL) & CUI_WELL_ACTION)
+            generated++;
+    }
+
+    section(ui, "Palette strip", "Click a swatch to lock it, then shuffle the rest.");
+    cui_palette_strip(ui, "Color palette", palette, locked, 5, .seed = &palette_seed, .value = "Click a swatch to lock it");
+
+    section(ui, "Aspect ratio, options and seed", "Each ratio drawn as its own shape, a choice with the action it feeds, and a seed that rolls.");
+    cui_column(ui, .gap = 12, .width = CUI_FILL) {
+        cui_aspect_picker(ui, "Aspect ratio", &aspect, .custom = true);
+        cui_box(ui, .dir = CUI_GRID, .columns = 2, .min_column_width = 260, .gap = 12, .width = CUI_FILL) {
+            static const char *const bg[] = { "hidden", "visible" };
+            static const char *const fmt[] = { "png", "jpg", "webp" };
+            static const char *const sizes[] = { "2.4 MB", "640 KB", "410 KB" };
+            cui_option_action(ui, "Background", bg, 2, &background, CUI_ICON_SCISSORS, .tooltip = "Cut out", .value = "erase");
+            char saved[32];
+            snprintf(saved, sizeof saved, "saved, %s", sizes[format]);
+            if (cui_option_action(ui, "Save as", fmt, 3, &format, CUI_ICON_DOWNLOAD, .tooltip = "Download",
+                                  .value = saved_as == format ? saved : sizes[format]) & CUI_WELL_ACTION)
+                saved_as = format;
+        }
+        cui_seed_field(ui, "Seed", &seed, &seed_fixed, .value = seed_fixed ? "Same image every run" : "Random each run");
+    }
+}
+
+/* ---- canvas and bars ------------------------------------------------------- */
+
+/* a picture for the result card, made here: a sky, a low sun and soft hills */
+static cui_texture canvas_picture(cui_ctx *ui) {
+    static cui_ctx *made_for;
+    static cui_texture tex;
+    if (made_for == ui && tex) return tex;
+    enum { W = 288, H = 360 };
+    static unsigned char px[W * H * 4];
+    static const float hills[3][4] = { { 0.18f, 1.04f, 0.54f, 0.26f }, { 0.92f, 1.08f, 0.53f, 0.26f }, { 0.5f, 1.18f, 0.64f, 0.28f } };
+    static const float tint[3][3] = { { 238, 143, 120 }, { 184, 96, 106 }, { 122, 63, 82 } };
+    for (int y = 0; y < H; y++)
+        for (int x = 0; x < W; x++) {
+            float acc[3] = { 0, 0, 0 };
+            for (int s = 0; s < 4; s++) {   /* four samples a pixel, for smooth edges */
+                float fx = x + 0.25f + 0.5f * (s & 1), fy = y + 0.25f + 0.5f * (s >> 1), v = fy / H, c[3];
+                float k = v < 0.48f ? v / 0.48f : (v - 0.48f) / 0.52f;
+                if (v < 0.48f) { c[0] = 118 + 67 * k; c[1] = 169 + 43 * k; c[2] = 236 + 10 * k; }
+                else { c[0] = 185 + 57 * k; c[1] = 212 + 5 * k; c[2] = 246 - 43 * k; }
+                float dx = fx - W * 0.66f, dy = fy - H * 0.32f, d = sqrtf(dx * dx + dy * dy) / W;
+                float sun = d < 0.08f ? 1 : d < 0.24f ? 0.55f * (1 - (d - 0.09f) / 0.15f) : 0;
+                if (sun > 1) sun = 1;
+                c[0] += (255 - c[0]) * sun; c[1] += (247 - c[1]) * sun; c[2] += (236 - c[2]) * sun;
+                for (int h = 0; h < 3; h++) {
+                    float ex = (fx / W - hills[h][0]) / hills[h][2], ey = (v - hills[h][1]) / hills[h][3];
+                    if (ex * ex + ey * ey < 1) { c[0] = tint[h][0]; c[1] = tint[h][1]; c[2] = tint[h][2]; }
+                }
+                for (int i = 0; i < 3; i++) acc[i] += c[i] * 0.25f;
+            }
+            unsigned char *p = &px[(y * W + x) * 4];
+            p[0] = (unsigned char)acc[0]; p[1] = (unsigned char)acc[1]; p[2] = (unsigned char)acc[2]; p[3] = 255;
+        }
+    tex = cui_image_create(ui, W, H, px);
+    made_for = ui;
+    return tex;
+}
+
+static void page_canvas(cui_ctx *ui) {
+    section(ui, "Grouped toolbar", "Raised groups in one pill, an inset set of modes and a primary action. Narrow the window and the end folds into the \xe2\x80\x9cmore\xe2\x80\x9d menu.");
+    static bool numbers = true, bold, italic;
+    static int mode;
+    static const char *const modes[] = { CUI_ICON_MOVE, CUI_ICON_SQUARE_PEN, CUI_ICON_TYPE };
+    static const char *const mode_names[] = { "Move", "Draw", "Text" };
+    cui_toolbar(ui, "canvas-tools", .style = CUI_TOOLBAR_GROUPED) {
+        cui_toolbar_group(ui) {
+            cui_toolbar_button(ui, CUI_ICON_UNDO_2, .tooltip = "Undo", .shortcut = "Ctrl Z");
+            cui_toolbar_button(ui, CUI_ICON_REDO_2, .tooltip = "Redo", .shortcut = "Ctrl Shift Z");
+        }
+        cui_toolbar_group(ui) {
+            cui_toolbar_button(ui, NULL, .label = "123", .tooltip = "Numbers", .toggle = &numbers);
+            cui_toolbar_button(ui, CUI_ICON_BOLD, .tooltip = "Bold", .toggle = &bold);
+            cui_toolbar_button(ui, CUI_ICON_ITALIC, .tooltip = "Italic", .toggle = &italic);
+            cui_toolbar_radio(ui, "mode", modes, 3, &mode, .labels = mode_names);
+        }
+        cui_toolbar_primary(ui, CUI_ICON_SPARKLES, .tooltip = "Generate");
+    }
+
+    section(ui, "Format bar", "Color, bold, underline, link, the text style (each previewed at its size), alignment and lists. Delete asks first.");
+    static cui_text_format fmt = { CUI_TONE_ROSE, true, false, false, 0, 44, CUI_FORMAT_ALIGN_LEFT, CUI_FORMAT_LIST_NONE };
+    static int deleted;
+    int fr = cui_format_bar(ui, "format", &fmt);
+    if (fr & CUI_FORMAT_DELETE) deleted++;
+    if (fr & CUI_FORMAT_LINK) fmt.link = !fmt.link;
+    char note[64];
+    if (deleted) snprintf(note, sizeof note, "Deleted %d time%s.", deleted, deleted == 1 ? "" : "s");
+    cui_muted(ui, deleted ? note : "The bar edits one struct; the app applies it to the selection.");
+
+    section(ui, "Live cursors and canvas controls", "Three people on one canvas: their pointers glide to where they move, one talks, one has a node selected. The rail zooms in steps; click the percentage to reset.");
+    static cui_node_view view = { 10, 6, 1 };
+    static float nodes[3][2] = { { 36, 64 }, { 36, 206 }, { 330, 124 } };
+    static bool grid = true, layers;
+    cui_live_user people[3] = {
+        { .name = "Paul", .tone = CUI_TONE_WARNING, .speaking = true },
+        { .name = "Kate", .tone = CUI_TONE_INFO, .says = "Bumping steps to 40?" },
+        { .name = "Mario", .tone = CUI_TONE_ROSE },
+    };
+    /* the app would send positions from the network; here each person picks a new spot every couple of seconds */
+    double now = cui_time(ui);
+    for (int k = 0; k < 3; k++) {
+        unsigned step = (unsigned)(now / (1.6 + 0.4 * k)), h = step * 2654435761u + (unsigned)k * 40503u;
+        people[k].x = 60 + (float)(h % 420);
+        people[k].y = 60 + (float)((h >> 12) % 220);
+        if (k == 1) people[k].says = (step % 3) ? "Bumping steps to 40?" : NULL;
+    }
+    cui_request_wakeup(ui, 0.4f);
+    cui_canvas_toggle toggles[] = { { CUI_ICON_EYE, "Show grid", &grid }, { CUI_ICON_LAYERS, "Layers", &layers } };
+    cui_box(ui, .dir = CUI_STACK, .width = CUI_FILL, .height = CUI_PX(360), .radius = 14, .clip = true) {
+        if (cui_node_editor_begin(ui, "canvas-graph", &view, .height = CUI_PX(360), .no_grid = !grid)) {
+            static const char *titles[3] = { "Positive", "Negative", "Generate" };
+            static const char *bodies[3] = { "A black bear, minimalist style, soft gradients", "No text, no people", "Steps 30 \xc2\xb7 dpm++ 2M" };
+            for (int i = 0; i < 3; i++) {
+                cui_node_begin(ui, i, &nodes[i][0], &nodes[i][1], titles[i], .width = 184);
+                if (i < 2) cui_node_output(ui, i + 1, i == 0 ? "Prompt" : "Avoid", .type = 1);
+                else { cui_node_input(ui, 3, "Prompt", .type = 1); cui_node_input(ui, 4, "Avoid", .type = 1); }
+                cui_node_content(ui) { cui_text(ui, bodies[i], .size = 12, .color = CUI_COLOR_TEXT_SECONDARY); }
+                cui_node_end(ui);
+                if (i == 2) cui_selection_ring(ui, cui_color_of(ui, CUI_COLOR_WARNING), .name = "Paul");
+            }
+            cui_node_link(ui, 1, 1, 3);
+            cui_node_link(ui, 2, 2, 4);
+            cui_node_editor_end(ui);
+        }
+        cui_rect bounds = { nodes[0][0], nodes[0][1], nodes[2][0] + 184 - nodes[0][0], 290 };
+        cui_canvas_controls(ui, "canvas-zoom", &view, .content = bounds, .toggles = toggles, .toggle_count = 2);
+        cui_live_cursors(ui, "canvas-people", people, 3, .view = &view);
+        cui_box(ui, .pad = 12) { cui_presence_pill(ui, "canvas-here", people, 3); }
+    }
+
+    section(ui, "Result card and selection bar", "A picture with its status and caption, and its actions in a floating toolbar. Tick files and a bar slides up; Esc clears.");
+    static bool saved;
+    static int scale = 1, type;
+    static const char *const scales[] = { "1x", "2x", "4x" }, *const types[] = { "PNG", "JPG", "WEBP" };
+    static bool picked[5] = { true, true, true, false, false };
+    static const char *names[] = { "hero-dark.png", "hero-light.png", "social-card.png", "icon-512.png", "thumb@2x.png" };
+    static const char *sizes[] = { "2.4 MB", "2.3 MB", "812 KB", "96 KB", "140 KB" };
+    static const cui_selection_action acts[] = { { CUI_ICON_MOVE, "Move" }, { CUI_ICON_COPY, "Copy" }, { CUI_ICON_TRASH_2, "Delete", CUI_TONE_DANGER } };
+    cui_row(ui, .gap = 28, .wrap = true, .align = CUI_ALIGN_START, .width = CUI_FILL, .pad_bottom = 60) {
+        cui_column(ui, .gap = 10, .align = CUI_ALIGN_CENTER, .min_width = 360) {   /* room for the whole action bar */
+            cui_result_card(ui, "canvas-result", canvas_picture(ui), "Final result", .caption = "Minimal illustration, soft gradients and smooth shapes against a clear sky",
+                            .badge = "Done in 4.2 s", .image_w = 288, .image_h = 360, .width = CUI_PX(344));
+            cui_toolbar(ui, "canvas-result-actions", .style = CUI_TOOLBAR_FLOATING) {
+                cui_toolbar_button(ui, CUI_ICON_MAXIMIZE_2, .tooltip = "Expand");
+                cui_toolbar_button(ui, CUI_ICON_BOOKMARK, .tooltip = "Save", .toggle = &saved, .tone = CUI_TONE_WARNING);
+                cui_toolbar_button(ui, CUI_ICON_COPY, .tooltip = "Copy");
+                cui_toolbar_button(ui, CUI_ICON_PANEL_LEFT, .tooltip = "Compare");
+                cui_toolbar_separator(ui);
+                cui_toolbar_cycle(ui, "scale", scales, 3, &scale, .tooltip = "Scale");
+                cui_toolbar_cycle(ui, "type", types, 3, &type, .tooltip = "Format");
+                cui_toolbar_separator(ui);
+                cui_toolbar_button(ui, CUI_ICON_DOWNLOAD, .tooltip = "Download");
+            }
+        }
+        cui_column(ui, .id = "canvas-files", .width = CUI_FILL, .min_width = 280, .max_width = 520, .pad = 4, .gap = 2, .bg = CUI_COLOR_SURFACE, .border = 1, .radius = 14) {
+            for (int k = 0; k < 5; k++) {
+                cui_push_id_int(ui, k);
+                cui_row(ui, .width = CUI_FILL, .height = CUI_PX(44), .pad_x = 10, .gap = 12, .align = CUI_ALIGN_CENTER, .radius = 10,
+                        .bg = picked[k] ? CUI_COLOR_ACCENT_SUBTLE : (cui_color){ 0 }) {
+                    cui_checkbox(ui, "##pick", &picked[k]);
+                    cui_icon(ui, CUI_ICON_IMAGE, 15, cui_color_of(ui, CUI_COLOR_TEXT_MUTED));
+                    cui_box(ui, .width = CUI_FILL) { cui_label(ui, names[k]); }
+                    cui_text(ui, sizes[k], .size = 12, .color = CUI_COLOR_TEXT_MUTED, .tabular = true);
+                }
+                cui_pop_id(ui);
+            }
+        }
+        cui_selection_bar(ui, "canvas-bulk", 0, acts, 3, .selected = picked, .item_count = 5, .anchor = cui_make_id(ui, "canvas-files"));
+    }
+}
+
+/* ---- voice ---------------------------------------------------------------- */
+
+/* A stand-in for a microphone: words with pauses between them. The page measures it
+ * 20 times a second, as an app would read its audio input. */
+static float voice_noise(float t, float s) {
+    return (sinf(t * 1.7f + s) * 0.5f + sinf(t * 3.1f + s * 2.3f) * 0.3f + sinf(t * 7.3f + s * 0.7f) * 0.2f) * 0.5f + 0.5f;
+}
+static float voice_level(float t, float s) {
+    return (sinf(t * 2.6f + s) > -0.45f ? 1.0f : 0.06f) * (0.28f + voice_noise(t * 2.4f, s) * 0.72f);
+}
+#define VOICE_RATE 20.0f   /* levels a second */
+#define VOICE_MAX 600      /* thirty seconds */
+
+typedef struct { float levels[64]; cui_voice_note note; bool mine; } voice_msg;
+
+/* a spoken conversation that plays in a loop: you ask, it thinks (no sound) and answers */
+typedef struct { cui_voice_owner who; float seconds; bool thinking; const char *text; } voice_turn;
+static const voice_turn voice_script[] = {
+    { CUI_VOICE_YOU, 3.2f, false, "What's the weather like tomorrow morning?" }, { CUI_VOICE_REPLY, 1.4f, true, NULL },
+    { CUI_VOICE_REPLY, 4.2f, false, "Clear and cool, about 9 degrees at eight, warming to 15 by noon." },
+    { CUI_VOICE_YOU, 2.4f, false, "Should I bring a jacket?" }, { CUI_VOICE_REPLY, 1.1f, true, NULL },
+    { CUI_VOICE_REPLY, 3.0f, false, "A light one, yes. It's breezy until around ten." },
+};
+static int voice_turn_at(float t, float *into) {
+    float total = 0;
+    for (int k = 0; k < 6; k++) total += voice_script[k].seconds;
+    t = fmodf(t, total);
+    for (int k = 0; k < 6; k++) { if (t < voice_script[k].seconds) { *into = t; return k; } t -= voice_script[k].seconds; }
+    *into = 0;
+    return 0;
+}
+
+static void page_voice(cui_ctx *ui) {
+    static char draft[256] = "";
+    static bool recording = false, muted = false;
+    static float take[VOICE_MAX];
+    static int take_n = 0;
+    static voice_msg msgs[8];
+    static int msg_n = 0;
+    static float call[240];
+    static uint8_t call_who[240];
+    static int call_n = 0;
+    static double last = -1, call_start = 0, next_level = 0;
+    double now = cui_time(ui);
+    float dt = last < 0 ? 0 : (float)(now - last);
+    last = now;
+    if (msg_n == 0) {   /* a message that came in earlier */
+        voice_msg *m = &msgs[msg_n++];
+        for (int k = 0; k < 64; k++) m->levels[k] = (0.2f + voice_noise(k * 0.3f, 0.4f) * 0.8f) * (sinf(k * 0.45f + 0.4f) > -0.7f ? 1.0f : 0.15f);
+        m->note = (cui_voice_note){ m->levels, 64, 0, 9, 1, false };
+    }
+    /* measure the "microphone" and the call 20 times a second */
+    while (next_level <= now) {
+        float t = (float)next_level;
+        if (recording && take_n < VOICE_MAX) take[take_n++] = 0.85f * voice_level(t * 1.1f, 1.7f);
+        float into;
+        int k = voice_turn_at(t - (float)call_start, &into);
+        const voice_turn *tu = &voice_script[k];
+        if (call_n == 240) { memmove(call, call + 1, sizeof call - sizeof call[0]); memmove(call_who, call_who + 1, sizeof call_who - 1); call_n--; }
+        call_who[call_n] = (uint8_t)tu->who;
+        call[call_n++] = tu->thinking ? CUI_VOICE_SILENT : tu->who == CUI_VOICE_YOU ? (muted ? 0 : 0.8f * voice_level(t * 1.3f, 2)) : voice_level(t * 1.4f, 5);
+        next_level += 1.0 / VOICE_RATE;
+    }
+    if (next_level - now > 1) next_level = now;   /* after a pause, start from now */
+
+    section(ui, "Voice messages", "Press the microphone to record: the strip scrolls with the level. Cancel throws the take away, send adds it below.");
+    cui_column(ui, .gap = 10, .width = CUI_FILL, .max_width = 620) {
+        for (int k = 0; k < msg_n; k++) {
+            voice_msg *m = &msgs[k];
+            if (m->note.playing) {   /* the "player": the page plays nothing, it only moves the position */
+                m->note.position += dt * (m->note.speed > 0 ? m->note.speed : 1);
+                if (m->note.position >= m->note.duration) { m->note.position = 0; m->note.playing = false; }
+                cui_request_wakeup(ui, 1.0f / 30.0f);
+            }
+            cui_push_id_int(ui, k);
+            cui_voice_note(ui, "note", &m->note, .mine = m->mine);
+            cui_pop_id(ui);
+        }
+        int ev = cui_chat_composer(ui, "composer", draft, sizeof draft, .placeholder = "Message", .mic = true, .recording = recording,
+                                   .levels = take, .level_count = take_n, .record_seconds = take_n / VOICE_RATE);
+        if (ev & CUI_COMPOSER_RECORD) { recording = true; take_n = 0; }
+        if (ev & CUI_COMPOSER_CANCEL) recording = false;
+        if (ev & CUI_COMPOSER_VOICE) {
+            recording = false;
+            if (msg_n == 8) { memmove(msgs + 1, msgs + 2, sizeof msgs[0] * 6); msg_n--; }
+            voice_msg *m = &msgs[msg_n++];
+            cui_voice_resample(take, take_n, m->levels, 64);   /* a short waveform kept with the message */
+            m->note = (cui_voice_note){ m->levels, 64, 0, take_n / VOICE_RATE, 1, false };
+            m->mine = true;
+            for (int k = 0; k < msg_n; k++) msgs[k].note.levels = msgs[k].levels;   /* moved by the memmove */
+        }
+        if (ev & CUI_COMPOSER_SEND) draft[0] = 0;
+        if (recording) cui_request_wakeup(ui, 1.0f / VOICE_RATE);
+    }
+
+    section(ui, "Voice session", "Both voices on one timeline, with the live transcript. While it thinks there is no sound, so the strip stays flat.");
+    float into;
+    int k = voice_turn_at((float)(now - call_start), &into);
+    const voice_turn *cur = &voice_script[k], *said = cur->thinking ? &voice_script[k - 1] : cur;
+    cui_voice_state state = cur->thinking ? CUI_VOICE_THINKING : cur->who == CUI_VOICE_REPLY ? CUI_VOICE_SPEAKING : muted ? CUI_VOICE_MUTED : CUI_VOICE_LISTENING;
+    float reveal = cur->thinking ? 1 : into / cur->seconds * 1.15f;
+    int len = (int)strlen(said->text), shown = reveal >= 1 ? len : (int)(len * reveal);
+    char spoken[128];
+    snprintf(spoken, sizeof spoken, "%.*s", shown, said->text);
+    cui_card(ui, .pad = 20, .width = CUI_FILL, .max_width = 620) {
+        int f = cui_voice_session(ui, "call", state, call, call_n, .owners = call_who, .transcript = spoken, .upcoming = said->text + shown,
+                                  .speaker = said->who, .muted = &muted);
+        if (f & CUI_VOICE_SESSION_END) { call_start = now; call_n = 0; cui_toast(ui, "Call ended", .description = "A new one starts from the top."); }
+    }
+    cui_request_wakeup(ui, 1.0f / VOICE_RATE);
+
+    section(ui, "Voice waveform", "The strip on its own: the newest levels scroll in from the right, a finished clip fits the width and seeks.");
+    static float clip[160], clip_progress = 0.3f;
+    for (int i = 0; i < 160; i++) clip[i] = (0.2f + voice_noise(i * 0.22f, 1.3f) * 0.8f) * (sinf(i * 0.12f + 1) > -0.75f ? 1.0f : 0.1f);
+    cui_column(ui, .gap = 12, .width = CUI_FILL, .max_width = 620) {
+        cui_voice_wave(ui, "live", call, call_n, .owners = call_who);
+        cui_voice_wave(ui, "clip", clip, 160, .progress = &clip_progress);
+    }
+}
+
 /* ---- registry ------------------------------------------------------------ */
 
 typedef struct { const char *name, *icon; void (*fn)(cui_ctx *ui); } more_page;
@@ -1605,6 +1995,10 @@ static const more_page pages[] = {
     { "Files", CUI_ICON_FOLDER, page_files },
     { "Developer tools", CUI_ICON_SQUARE_TERMINAL, page_devtools },
     { "More developer tools", CUI_ICON_BUG, page_devtools2 },
+    { "Instruments", CUI_ICON_CHART_LINE, page_instruments },
+    { "Creative controls", CUI_ICON_PALETTE, page_creative },
+    { "Canvas and bars", CUI_ICON_LAYERS, page_canvas },
+    { "Voice", CUI_ICON_MIC, page_voice },
 };
 
 int gallery_more_count(void) { return (int)(sizeof pages / sizeof pages[0]); }

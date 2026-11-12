@@ -232,10 +232,12 @@ bool cui__plat_init(cui_app *app) {
         XSetWMNormalHints(x->dpy, x->win, hints);
         XFree(hints);
     }
+    /* Desktops find the window's .desktop file (name, icon, dock entry) by
+     * matching WM_CLASS against its file name, so both parts carry the app ID */
     XClassHint *ch = XAllocClassHint();
     if (ch) {
-        ch->res_name = (char *)app->title;
-        ch->res_class = (char *)"CUI";
+        ch->res_name = (char *)(app->desc.app_id ? app->desc.app_id : app->title);
+        ch->res_class = (char *)(app->desc.app_id ? app->desc.app_id : "CUI");
         XSetClassHint(x->dpy, x->win, ch);
         XFree(ch);
     }

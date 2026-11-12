@@ -255,7 +255,9 @@ bool cui_menu_item_ex(cui_ctx *ui, const char *label, const cui_menu_item_opts *
     cui__open(ui, i);
     cui_color fg = o->danger ? CUI_C(ui, DANGER) : CUI_C(ui, FOREGROUND);
     if (o->icon) cui__icon_node(ui, o->icon, 16, o->danger ? fg : CUI_C(ui, TEXT_SECONDARY));
-    int t = cui__text_node(ui, label, cui__display_len(label), CUI_FONT_BODY, cui__fs(ui, ui->theme.text_body), fg, false);
+    float ts = o->text_size > 0 ? o->text_size : ui->theme.text_body;
+    if (o->text_size > 0) ui->nodes[i].h = CUI_PX(CUI_MAX(32.0f, roundf(cui__fs(ui, ts)) + 20));
+    int t = cui__text_node(ui, label, cui__display_len(label), o->font, cui__fs(ui, ts), fg, false);
     ui->nodes[t].line_height = 1.3f;
     ui->nodes[t].w = CUI_FILL;
     if (o->shortcut) {
@@ -428,6 +430,7 @@ bool cui_select_ex(cui_ctx *ui, const char *id_str, const char *const *items, in
 typedef struct { char text[256]; cui_id anchor, shown; cui_spring t, ox, oy; double last_shown; bool visible, passive; } cui__tooltip_state;
 static cui__tooltip_state *cui__tooltip_get(cui_ctx *ui) { return cui_state(ui, 0x7001717u, sizeof(cui__tooltip_state)); }
 
+/** Hover starts cold until a tooltip has actually appeared. */
 void cui_tooltip(cui_ctx *ui, const char *text) {
     cui_id anchor = ui->last_id;
     if (!anchor || !text) return;
@@ -438,7 +441,7 @@ void cui_tooltip(cui_ctx *ui, const char *text) {
             ui->tooltip_id = anchor;
             ui->hover_start = ui->time;
         }
-        bool warm = ui->time - tt->last_shown < 0.4;
+        bool warm = tt->last_shown > 0 && ui->time - tt->last_shown < 0.4;
         float delay = warm ? 0.0f : 0.55f;
         if (ui->time - ui->hover_start >= delay) {
             snprintf(tt->text, sizeof tt->text, "%s", text);
@@ -453,7 +456,7 @@ void cui_tooltip(cui_ctx *ui, const char *text) {
     }
 }
 
-/* Like cui_tooltip, for a rect that is not interactive (a truncated label). A
+/** Like cui_tooltip, for a rect that is not interactive (a truncated label). A
  * widget's own tooltip wins if both ask in the same frame. */
 void cui__tooltip_passive(cui_ctx *ui, cui_id anchor, const char *text) {
     cui__tooltip_state *tt = cui__tooltip_get(ui);
@@ -463,7 +466,7 @@ void cui__tooltip_passive(cui_ctx *ui, cui_id anchor, const char *text) {
      * open above that rect owns the pointer, so its label stays quiet */
     if (ui->hot_layer != ui->current_layer) return;
     if (ui->tooltip_id != anchor) { ui->tooltip_id = anchor; ui->hover_start = ui->time; }
-    bool warm = ui->time - tt->last_shown < 0.4;
+    bool warm = tt->last_shown > 0 && ui->time - tt->last_shown < 0.4;
     float delay = warm ? 0.0f : 0.7f;
     if (ui->time - ui->hover_start >= delay) {
         snprintf(tt->text, sizeof tt->text, "%s", text);
@@ -716,6 +719,7 @@ void cui_sheet_end(cui_ctx *ui) { cui__modal_end(ui, 1); }
 /* Toasts                                                                   */
 /* ------------------------------------------------------------------------ */
 
+/** Start the timer at creation so an idle interval cannot age a new toast. */
 int cui_toast_ex(cui_ctx *ui, const char *title, const cui_toast_opts *o) {
     cui_toast_opts d;
     memset(&d, 0, sizeof d);
@@ -727,6 +731,7 @@ int cui_toast_ex(cui_ctx *ui, const char *title, const cui_toast_opts *o) {
     cui_toast_item *t = &ui->toasts[ui->toast_count++];
     memset(t, 0, sizeof *t);
     t->handle = ui->toast_next_handle++;
+    t->last_tick = ui->time;
     snprintf(t->title, sizeof t->title, "%s", title ? title : "");
     if (o->description) snprintf(t->desc, sizeof t->desc, "%s", o->description);
     if (o->action) snprintf(t->action, sizeof t->action, "%s", o->action);
@@ -748,7 +753,7 @@ void cui_toast_dismiss(cui_ctx *ui, int handle) {
     for (int i = 0; i < ui->toast_count; i++) if (ui->toasts[i].handle == handle) ui->toasts[i].dismissed = true;
 }
 
-typedef struct { float hover; } cui__toasts_state;
+typedef struct { float hover; bool paused; } cui__toasts_state;
 
 typedef struct { float frac; cui_color c; } cui__toast_timer;
 static void cui__paint_toast_timer(cui_ctx *ui, cui_node *n, void *data) {
@@ -759,20 +764,25 @@ static void cui__paint_toast_timer(cui_ctx *ui, cui_node *n, void *data) {
     if (w > 0) cui_draw_rect(ui, (cui_rect){ r.x + inset, r.y + r.h - 3, w, 2 }, CUI_CORNERS(1), p->c);
 }
 
+/** Account for elapsed time before handling input, pausing while hovered. */
 static void cui__toasts_render(cui_ctx *ui) {
     if (ui->toast_count == 0) return;
     cui_id root_id = 0x70A57u;
     cui__toasts_state *ts = cui_state(ui, root_id, sizeof *ts);
     bool hovered = ui->hot_layer == root_id;
+    /* The elapsed interval belongs to the previous frame's hover state. */
+    bool was_paused = ts->paused;
+    ts->paused = hovered;
     cui__tween(ui, &ts->hover, hovered ? 1.0f : 0.0f, CUI__T_HOVER);
     float W = CUI_MIN(360.0f, ui->vw - 32);
     /* age, dismissal, removal */
     for (int i = 0; i < ui->toast_count; i++) {
         cui_toast_item *t = &ui->toasts[i];
-        if (!hovered && t->duration > 0 && !t->dismissed) {
-            t->age += ui->dt;
+        if (t->duration > 0 && !t->dismissed) {
+            if (!was_paused) t->age += (float)(ui->time - t->last_tick);
+            t->last_tick = ui->time;
             if (t->age >= t->duration) t->dismissed = true;
-            else cui__wakeup_after(ui, t->duration - t->age + 0.01f);
+            else if (!hovered) cui__wakeup_after(ui, t->duration - t->age + 0.01f);
         }
         cui__spring(ui, &t->enter, t->dismissed ? 0.0f : 1.0f, t->dismissed ? 0.22f : 0.38f, 0.0f);
     }
@@ -913,12 +923,14 @@ static void cui__toasts_render(cui_ctx *ui) {
             cui_button_opts bo;
             memset(&bo, 0, sizeof bo);
             bo.size = CUI_SIZE_SM;
+            bo.disabled = t->dismissed;
             if (cui_button_ex(ui, t->action, &bo)) { t->action_clicked = true; t->dismissed = true; }
         }
         cui_button_opts xo;
         memset(&xo, 0, sizeof xo);
         xo.size = CUI_SIZE_SM;
         xo.color = CUI_COLOR_TEXT_MUTED;
+        xo.disabled = t->dismissed;
         if (cui_icon_button_ex(ui, CUI_ICON_X, &xo)) t->dismissed = true;
         ui->nodes[ui->last_node].w = CUI_PX(24); ui->nodes[ui->last_node].h = CUI_PX(24);
         ui->nodes[ui->last_node].opacity = 0.35f + 0.65f * ts->hover;

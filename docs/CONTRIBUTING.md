@@ -168,7 +168,7 @@ Open the images and look at them, in light and dark. Then copy into `docs/images
 
 ## Keeping the code readable
 
-CUI has about 190 components in plain C. That stays workable only if every file reads the same way, so these rules matter as much as the ones above. [How CUI is built](architecture.md) shows the outline every component follows and where things live.
+CUI has about 210 components in plain C. That stays workable only if every file reads the same way, so these rules matter as much as the ones above. [How CUI is built](architecture.md) shows the outline every component follows and where things live.
 
 **Where code goes**
 
@@ -176,7 +176,7 @@ CUI has about 190 components in plain C. That stays workable only if every file 
 - Something one file uses is `static` in that file. Something a second file needs moves to `src/cui_internal.h`, in the section its heading names, and its implementation goes in the file that section lists.
 - Before writing a small helper, search `cui_internal.h`. Copies of the same logic in several files are the main way a codebase like this decays: the next change fixes one copy and not the others. The theme rules in particular have one home each: `CUI_C` for colors, `cui__emphasis` for the selected or active color, `cui__fs` for font sizes, the `CUI__T_*` and `CUI__SPRING_*` tokens for motion.
 - The public header promises things to users. New API goes there only with a comment saying what it is for, next to its siblings, with an options struct whose zero value is the default.
-- Names are unique across the whole library, even `static` ones, and no variable is called `near` or `far` (macros in the Windows headers): the single-file distribution (`tools/amalgamate.py`) compiles every file as one, and CI builds it.
+- Names are unique across the whole library, even `static` ones, and no name is a word the Windows headers define as a macro, such as `small`, `near`, `far`, `interface` or `ERROR` (`tests/windows_sdk_words.h` lists them): the single-file distribution (`tools/amalgamate.py`) compiles every file as one, often after a user's `#include <windows.h>`, and CI builds it with those macros defined.
 - The core (`cui_core.c`, `cui_layout.c`, `cui_draw.c`, `cui_text.c`) never calls into a component's file. When the core has to reach an optional part, the part installs a hook (`ui->emoji_hook` is the example). Windows linkers keep a whole file once anything in it is used.
 
 **How code reads**
@@ -202,7 +202,7 @@ Keep a refactor and a behavior change in separate commits, so each can be review
 - **`master` always builds and passes CI.** Every push runs the Linux, Windows and macOS builds, the sanitizers and the app smoke tests.
 - **One topic per commit.** The first line says what changed, in under about 70 characters; the body says why, and what was checked.
 - **`CHANGELOG.md`** gets a line for every change a user would notice, under the unreleased section, written for users rather than for the code.
-- **Versions** follow semantic versioning: a minor version for new features, a patch for fixes, and a note under "Changed" whenever a change could break a build or alter a stored value. `CUI_VERSION_*` in `cui.h` and `VERSION` in `CMakeLists.txt` change together.
+- **Versions** follow semantic versioning: a minor version for new features, a patch for fixes, and a note under "Changed" whenever a change could break a build or alter a stored value. Adding a field to a struct is a minor change: the shared library's name carries the minor version for that reason, so a patch release must not change any struct. `CUI_VERSION_*` in `cui.h` and `VERSION` in `CMakeLists.txt` change together. The `GIT_TAG` in the install snippets of `README.md` and `docs/getting-started.md` names the newest release, and changes with them (`tests/first_steps.sh` checks it).
 - **Releases** are published by `.github/workflows/release.yml`, from a version tag or run by hand, with that version's changelog section as the notes.
 - **Never commit secrets**: no API keys, tokens, session links or private URLs, in code, docs, commit messages or test data.
 

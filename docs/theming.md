@@ -16,6 +16,8 @@ cui_app_create(&(cui_app_desc){ .theme = CUI_THEME_DARK, .accent = CUI_ACCENT_GR
 cui_app_create(&(cui_app_desc){ .follow_system_theme = true });   /* Windows and macOS */
 ```
 
+A theme switcher with Light, Dark and System changes this while the app runs. `cui_app_follow_system_theme(NULL, false)` stops following, so the `cui_set_theme` you call next lasts; `cui_app_follow_system_theme(NULL, true)` applies the system's setting at once and follows it again. `NULL` is the running app, as in a `cui_app_run` callback.
+
 | Neutral, light | Green, dark |
 |---|---|
 | ![](images/overview-light.png) | ![](images/overview-green-dark.png) |
@@ -43,6 +45,8 @@ cui_box(ui, .bg = CUI_COLOR_SURFACE_MUTED, .border = 1, .radius = 12, .pad = 16)
 ```
 
 Tokens are ordinary `cui_color` values with a marker, so they work anywhere a color does. To get the concrete color, call `cui_color_of(ui, CUI_COLOR_ACCENT)` or `cui_token_color(ui, CUI_TOKEN_ACCENT)`.
+
+The six series colors (blue, orange, aqua, violet, yellow and magenta, rotated so the first sits nearest the accent hue) share one lightness in each mode, so no series is louder than another; their order keeps neighbours apart under color blindness.
 
 Spend the accent with intent: the selected item, the one series that matters, progress, focus. Status colors are for status only, always paired with a label or an icon.
 

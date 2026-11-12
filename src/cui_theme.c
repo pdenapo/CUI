@@ -213,13 +213,16 @@ void cui__theme_build(cui_theme *t, cui_theme_mode mode, cui_accent accent) {
     c[CUI_TOKEN_FOCUS_RING] = cui_mix(c[CUI_TOKEN_ACCENT], c[CUI_TOKEN_BACKGROUND], dark ? 0.35f : 0.45f);
     if (accent == CUI_ACCENT_NEUTRAL) c[CUI_TOKEN_FOCUS_RING] = cui_oklch(series_l, 0.15f, 250, 0.9f);
 
-    /* Series palette: blue, orange, aqua, violet, yellow, magenta. Each mode
-     * has its own steps, and the order keeps every neighbour (the last and
-     * first too) apart under color blindness, so any rotation is safe. It is
-     * rotated so the first series sits nearest the accent hue. */
-    static const uint32_t sp[2][6] = { { 0x2a78d6, 0xeb6834, 0x1baf7a, 0x6250d6, 0xeda100, 0xe87ba4 },
-                                       { 0x4892ed, 0xe8672e, 0x20ab7a, 0x8e7fe6, 0xd17f00, 0xdd6197 } };
-    static const float sh[6] = { 252, 45, 165, 285, 80, 350 };
+    /* Series palette: blue, orange, aqua, violet, yellow, magenta. The order
+     * keeps every neighbour (the last and first too) apart under color
+     * blindness, so any rotation is safe. It is rotated so the first series
+     * sits nearest the accent hue. Every color in a mode shares one lightness
+     * and about one chroma (OKLCH L 0.56, C 0.14 light; L 0.74, C 0.115
+     * dark), so no series shouts over the others or over the rest of the UI;
+     * hue alone tells them apart. The light steps keep 4.2:1 or more on white. */
+    static const uint32_t sp[2][6] = { { 0x2a76c3, 0xb55422, 0x008d5f, 0x6e65c2, 0x9f6800, 0xaf4d80 },
+                                       { 0x73aff1, 0xe7936c, 0x5ac299, 0xa3a0f1, 0xd1a24f, 0xe18cb5 } };
+    static const float sh[6] = { 252, 45, 163, 285, 77, 350 };
     int first = 0;
     if (accent != CUI_ACCENT_NEUTRAL) {
         float best = 1e9f;

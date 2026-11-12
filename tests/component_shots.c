@@ -314,7 +314,18 @@ SCENE(line_chart) {
     cui_series s[2] = { { "Subscriptions", a, 12, { 0 } }, { "Cloud spend", b, 12, { 0 } } };
     cui_card(ui, UPTO(680)) { cui_line_chart(ui, "l", s, 2, .labels = m, .label_count = 12, .area = true, .smooth = true, .height = 200, .format = "$%.0fk"); }
 }
-SCENE(bar_chart) {
+/* hovers a point inside the rect an id had last frame, at fractions of its size */
+static void hover_id(cui_ctx *ui, cui_id id, int f, int at, float fx, float fy) {
+    cui_rect r = cui_get_rect(ui, id);
+    if (f == at && r.w > 0) cui_input_mouse_move(ui, r.x + r.w * fx, r.y + r.h * fy);
+}
+static void body_bar_chart(cui_ctx *ui);
+static void scene_bar_chart(cui_ctx *ui, int f) {
+    /* April's column, to show the hover band and its value chip */
+    if (f < 0) { hover_id(ui, cui_make_id(ui, "b") ^ 0x9107u, -f - 1, 40, 0.56f, 0.7f); return; }
+    frame_wrap(ui, body_bar_chart);
+}
+static void body_bar_chart(cui_ctx *ui) {
     static const float a[] = { 42, 51, 38, 64, 58, 71 }, b[] = { 28, 33, 30, 41, 46, 49 };
     static const char *m[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun" };
     cui_series s[2] = { { "Desktop", a, 6, { 0 } }, { "Mobile", b, 6, { 0 } } };
@@ -1724,12 +1735,13 @@ static void body_gantt(cui_ctx *ui);
 static void scene_gantt(cui_ctx *ui, int f) { if (f < 0) return; frame_wrap(ui, body_gantt); }
 static void body_gantt(cui_ctx *ui) {
     static cui_gantt_task tasks[] = {
-        { "Research", "Maya Okafor", 0, 5, 1, CUI_TONE_TEAL, -1, false },
-        { "Wireframes", "Aiko Tanaka", 4, 10, 1, CUI_TONE_TEAL, 0, false },
-        { "Design system", "Rosa Delgado", 8, 16, 0.7f, CUI_TONE_TEAL, 1, false },
-        { "Core engine", "Jonas Berg", 6, 19, 0.55f, CUI_TONE_INFO, 0, false },
-        { "Beta", NULL, 21, 21, 0, CUI_TONE_WARNING, 3, true },
-        { "Launch", "Priya Nair", 22, 27, 0, CUI_TONE_SUCCESS, 4, false },
+        /* no tones: the bars take their state's color (done, active, planned) from progress and today */
+        { "Research", "Maya Okafor", 0, 5, 1, 0, -1, false },
+        { "Wireframes", "Aiko Tanaka", 4, 10, 1, 0, 0, false },
+        { "Design system", "Rosa Delgado", 8, 16, 0.7f, 0, 1, false },
+        { "Core engine", "Jonas Berg", 6, 19, 0.55f, 0, 0, false },
+        { "Beta", NULL, 21, 21, 0, 0, 3, true },
+        { "Launch", "Priya Nair", 22, 27, 0, 0, 4, false },
     };
     cui_date org = { 2026, 10, 26 };
     cui_gantt(ui, "plan", tasks, 6, org, 27, .day_width = 26.3f, .today = 10);   /* the range fits the frame: no date cut at the edge */
@@ -1983,7 +1995,13 @@ static void viz_data(void) {
     }
     done = true;
 }
-SCENE(heatmap) {
+static void body_heatmap(cui_ctx *ui);
+static void scene_heatmap(cui_ctx *ui, int f) {
+    /* Wednesday at 14h, to show the ring, the tooltip and the lit labels */
+    if (f < 0) { cui_rect r = cui_get_rect(ui, cui_make_id(ui, "traffic")); if (-f - 1 == 40 && r.w > 0) cui_input_mouse_move(ui, r.x + 40 + 14.5f * 33, r.y + 2.5f * 33); return; }
+    frame_wrap(ui, body_heatmap);
+}
+static void body_heatmap(cui_ctx *ui) {
     viz_data();
     static const char *wd[] = { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
     static const char *hours[24] = { "0h", NULL, NULL, "3h", NULL, NULL, "6h", NULL, NULL, "9h", NULL, NULL, "12h", NULL, NULL, "15h", NULL, NULL, "18h", NULL, NULL, "21h", NULL, NULL };
@@ -1994,7 +2012,17 @@ SCENE(calendar_heatmap) {
     cui_date start = { 2025, 11, 6 };
     cui_calendar_heatmap(ui, "year", start, viz_days, 364, .unit = "contributions");
 }
-SCENE(treemap_radar) {
+static void body_treemap_radar(cui_ctx *ui);
+static void scene_treemap_radar(cui_ctx *ui, int f) {
+    /* the 1.1 point on the Size axis, to show the radar's value chip */
+    if (f < 0) {
+        cui_rect r = cui_get_rect(ui, cui_make_id(ui, "radar"));
+        if (-f - 1 == 40 && r.w > 0) cui_input_mouse_move(ui, r.x + r.w * 0.5f + 0.866f * 85, r.y + 26 + 100 - 0.5f * 85);
+        return;
+    }
+    frame_wrap(ui, body_treemap_radar);
+}
+static void body_treemap_radar(cui_ctx *ui) {
     static const cui_viz_item mods[] = {
         { "Layout", 55 }, { "Text", 42 }, { "Draw", 35 }, { "Controls", 31 }, { "Charts", 23 },
         { "Overlays", 19 }, { "Platform", 16 }, { "Theme", 9 }, { "Icons", 7 }, { "Grid", 6 },
@@ -2002,7 +2030,8 @@ SCENE(treemap_radar) {
     static const float a[] = { 82, 64, 90, 58, 75, 88 }, b[] = { 70, 85, 72, 80, 60, 79 };
     static const char *axes[] = { "Speed", "Size", "Polish", "Docs", "Platforms", "Tests" };
     cui_row(ui, .gap = 28, .align = CUI_ALIGN_CENTER, .width = CUI_FILL, .wrap = true) {
-        cui_box(ui, .width = CUI_GROW(1), .min_width = 300) { cui_treemap(ui, "bundle", mods, 10, .height = 290, .format = "%.0f KB"); }
+        static int picked = 2;   /* "Draw", to show the selected tile */
+        cui_box(ui, .width = CUI_GROW(1), .min_width = 300) { cui_treemap(ui, "bundle", mods, 10, .height = 290, .format = "%.0f KB", .selected = &picked); }
         cui_series rs[] = { { "1.0", a, 6, { 0 } }, { "1.1", b, 6, { 0 } } };
         cui_column(ui, .gap = 2, .align = CUI_ALIGN_CENTER) {
             cui_label(ui, "Review scores by release");
@@ -2170,11 +2199,11 @@ SCENE(emoji_picker) {
     }
 }
 SCENE(gauges) {
-    static const cui_gauge_band load[] = { { 60, CUI_TONE_SUCCESS }, { 85, CUI_TONE_WARNING }, { 100, CUI_TONE_DANGER } };
+    static const cui_gauge_band load[] = { { 60, CUI_TONE_SUCCESS, "Normal" }, { 85, CUI_TONE_WARNING, "Elevated" }, { 100, CUI_TONE_DANGER, "High" } };
     cui_row(ui, .gap = 28, .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER, .width = CUI_FILL, .wrap = true) {
         cui_radial_gauge(ui, "cpu", 72, 0, 100, .unit = "%", .label = "CPU load", .bands = load, .band_count = 3);
-        cui_radial_gauge(ui, "rps", 1840, 0, 2500, .label = "Requests per second", .show_target = true, .target = 2000, .ticks = 5);
-        cui_radial_gauge(ui, "disk", 38, 0, 100, .unit = "%", .label = "Disk", .no_needle = true, .size = 160, .ticks = -1);
+        cui_radial_gauge(ui, "rps", 1840, 0, 2500, .label = "Requests / s", .show_target = true, .target = 2000);
+        cui_radial_gauge(ui, "disk", 38, 0, 100, .unit = "%", .label = "Disk", .style = CUI_GAUGE_RING, .detail = "190 of 500 GB", .size = 150);
     }
 }
 /* a price history for the candlestick demo: a seeded random walk with a trend and some volatility clusters */
@@ -2221,13 +2250,21 @@ SCENE(candlestick) {
         cui_candlestick(ui, "nrth", cs, N, .labels = labels, .overlays = &ov, .overlay_count = 1, .height = 300);
     }
 }
-SCENE(sankey) {
+static void body_sankey(cui_ctx *ui);
+static void scene_sankey(cui_ctx *ui, int f) {
+    /* the Search to Sign up flow, to show the path it lights */
+    if (f < 0) { cui_rect r = cui_get_rect(ui, cui_make_id(ui, "flow")); if (-f - 1 == 40 && r.w > 0) cui_input_mouse_move(ui, r.x + r.w * 0.12f, r.y + 40); return; }
+    frame_wrap(ui, body_sankey);
+}
+static void body_sankey(cui_ctx *ui) {
     static const char *nodes[] = { "Search", "Social", "Referral", "Sign up", "Bounced", "Trial", "Paid", "Churned" };
     static const cui_sankey_link links[] = {
         { 0, 3, 420 }, { 1, 3, 260 }, { 2, 3, 180 }, { 0, 4, 300 }, { 1, 4, 220 },
         { 3, 5, 860 }, { 5, 6, 580 }, { 5, 7, 280 },
     };
-    cui_sankey(ui, "flow", nodes, 8, links, 8, .height = 300);
+    /* colored by meaning: neutral sources, the funnel in the first series color, paid green, lost red */
+    const cui_color colors[] = { { 0 }, { 0 }, { 0 }, CUI_COLOR_SERIES(0), CUI_COLOR_DANGER, CUI_COLOR_SERIES(0), CUI_COLOR_SUCCESS, CUI_COLOR_TEXT_MUTED };
+    cui_sankey(ui, "flow", nodes, 8, links, 8, .height = 300, .node_colors = colors);
 }
 SCENE(bar_list_rings) {
     static const cui_viz_item pages[] = { { "/docs", 4820 }, { "/", 3920 }, { "/gallery", 2410 }, { "/blog/fast-ui-in-c", 1830 }, { "/download", 1210 } };
@@ -2420,6 +2457,125 @@ SCENE(voice_orb) {
         }
     }
 }
+/* ---- voice: levels as a microphone would give them, 20 a second: words with pauses
+ * between them. The scenes step with the frame clock, so the docs image is the same
+ * every time and the live site scrolls. */
+static float voice_noise(float t, float s) {
+    return (sinf(t * 1.7f + s) * 0.5f + sinf(t * 3.1f + s * 2.3f) * 0.3f + sinf(t * 7.3f + s * 0.7f) * 0.2f) * 0.5f + 0.5f;
+}
+static float voice_level(float t, float s) {
+    return (sinf(t * 2.6f + s) > -0.45f ? 1.0f : 0.06f) * (0.28f + voice_noise(t * 2.4f, s) * 0.72f);
+}
+#define VOICE_STEP 0.05f   /* seconds between levels */
+static int voice_step(cui_ctx *ui) { return (int)(cui_time(ui) / VOICE_STEP); }   /* levels measured so far */
+/* the newest n levels of a voice after `step` of them, newest last */
+static void voice_fill(float *out, int n, int step, float rate, float seed, float gain) {
+    float now = step * VOICE_STEP + 40;
+    for (int k = 0; k < n; k++) out[k] = gain * voice_level((now - (n - 1 - k) * VOICE_STEP) * rate, seed);
+}
+/* a finished clip: louder and quieter stretches and a pause */
+static void voice_clip(float *out, int n, float seed) {
+    for (int k = 0; k < n; k++)
+        out[k] = (0.2f + voice_noise(k * 0.3f, seed) * 0.8f) * (sinf(k * 0.45f + seed) > -0.7f ? 1.0f : 0.15f);
+}
+static float vw_progress = 0.45f;
+static void voice_wave_row(cui_ctx *ui, const char *label, const char *detail, bool accent) {
+    cui_row(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
+        cui_text(ui, label, .size = 12.5f, .font = CUI_FONT_MEDIUM, .color = CUI_COLOR_TEXT_SECONDARY, .width = CUI_FILL);
+        cui_text(ui, detail, .size = 12, .color = accent ? CUI_COLOR_ACCENT : CUI_COLOR_TEXT_MUTED);
+    }
+}
+SCENE(voice_wave) {
+    static float you[200], reply[200], clip[160];
+    static char rec_time[16], note_time[16];
+    voice_fill(you, 200, voice_step(ui), 1.1f, 1.7f, 0.85f);
+    voice_fill(reply, 200, voice_step(ui), 1.3f, 5.0f, 1.0f);
+    voice_clip(clip, 160, 1.3f);
+    cui_column(ui, .gap = 10, UPTO(560)) {
+        snprintf(rec_time, sizeof rec_time, "0:%02d", 7 + (int)cui_time(ui) % 50);
+        voice_wave_row(ui, "Recording you", rec_time, false);
+        cui_voice_wave(ui, "you", you, 200);
+        voice_wave_row(ui, "Reply", "Speaking", true);
+        cui_voice_wave(ui, "reply", reply, 200, .owner = CUI_VOICE_REPLY);
+        snprintf(note_time, sizeof note_time, "0:%02d / 0:12", (int)(vw_progress * 12));
+        voice_wave_row(ui, "Voice note", note_time, false);
+        cui_voice_wave(ui, "note", clip, 160, .progress = &vw_progress);
+    }
+}
+
+static char vr_draft[256] = "";
+static bool vr_recording = true;
+SCENE(voice_recorder) {
+    static float mic[240];
+    voice_fill(mic, 240, voice_step(ui), 1.1f, 1.7f, 0.85f);
+    int n = 120 + voice_step(ui) % 120;   /* the take grows from the right */
+    cui_column(ui, .gap = 14, UPTO(560)) {
+        static char idle[256] = "";
+        cui_chat_composer(ui, "idle", idle, sizeof idle, .placeholder = "Message", .mic = true);
+        int ev = cui_chat_composer(ui, "rec", vr_draft, sizeof vr_draft, .mic = true, .recording = vr_recording,
+                                   .levels = mic + 240 - n, .level_count = n, .record_seconds = n * VOICE_STEP);
+        if (ev & CUI_COMPOSER_RECORD) vr_recording = true;
+        if (ev & (CUI_COMPOSER_CANCEL | CUI_COMPOSER_VOICE)) vr_recording = false;
+    }
+}
+
+static cui_voice_note vn_notes[2] = { { NULL, 0, 4.8f, 12, 1.5f, true }, { NULL, 0, 0, 8, 1, false } };
+SCENE(voice_note) {
+    static float a[90], b[64];
+    voice_clip(a, 90, 0.4f);
+    voice_clip(b, 64, 2.9f);
+    vn_notes[0].levels = a; vn_notes[0].count = 90;
+    vn_notes[1].levels = b; vn_notes[1].count = 64;
+    cui_column(ui, .gap = 10, UPTO(560)) {
+        cui_voice_note(ui, "theirs", &vn_notes[0]);
+        cui_voice_note(ui, "mine", &vn_notes[1], .mine = true);
+    }
+}
+
+/* a spoken conversation: you ask, the assistant thinks (no sound) and answers */
+typedef struct { cui_voice_owner who; float seconds; bool thinking; const char *text; } voice_turn;
+static const voice_turn vs_script[] = {
+    { CUI_VOICE_YOU, 3.2f, false, "What's the weather like tomorrow morning?" }, { CUI_VOICE_REPLY, 1.4f, true, NULL },
+    { CUI_VOICE_REPLY, 4.2f, false, "Clear and cool, about 9 degrees at eight, warming to 15 by noon." },
+    { CUI_VOICE_YOU, 2.4f, false, "Should I bring a jacket?" }, { CUI_VOICE_REPLY, 1.1f, true, NULL },
+    { CUI_VOICE_REPLY, 3.0f, false, "A light one, yes. It's breezy until around ten." },
+};
+/* the turn at t seconds into the script (looping), and how far into it */
+static const voice_turn *vs_turn_at(float t, float *into) {
+    float total = 0;
+    for (int k = 0; k < 6; k++) total += vs_script[k].seconds;
+    t = fmodf(t, total);
+    for (int k = 0; k < 6; k++) { if (t < vs_script[k].seconds) { *into = t; return &vs_script[k]; } t -= vs_script[k].seconds; }
+    *into = 0;
+    return &vs_script[0];
+}
+static bool vs_muted = false;
+SCENE(voice_session) {
+    static float lv[220];
+    static uint8_t own[220];
+    float now = 5.9f + voice_step(ui) * VOICE_STEP;
+    int n = 0;
+    for (int k = 219; k >= 0; k--) {   /* oldest first, starting with the conversation */
+        float t = now - k * VOICE_STEP, into;
+        if (t < 0) continue;
+        const voice_turn *tu = vs_turn_at(t, &into);
+        own[n] = (uint8_t)tu->who;
+        lv[n++] = tu->thinking ? CUI_VOICE_SILENT : tu->who == CUI_VOICE_YOU ? (vs_muted ? 0 : 0.8f * voice_level(t * 1.3f, 2)) : voice_level(t * 1.4f, 5);
+    }
+    float into;
+    const voice_turn *cur = vs_turn_at(now, &into);
+    const voice_turn *said = cur->thinking ? cur - 1 : cur;
+    cui_voice_state state = cur->thinking ? CUI_VOICE_THINKING : cur->who == CUI_VOICE_REPLY ? CUI_VOICE_SPEAKING : vs_muted ? CUI_VOICE_MUTED : CUI_VOICE_LISTENING;
+    float reveal = into / cur->seconds * 1.15f;
+    int len = (int)strlen(said->text), k = cur->thinking || reveal >= 1 ? len : (int)(len * reveal);
+    static char spoken[128];
+    snprintf(spoken, sizeof spoken, "%.*s", k, said->text);
+    cui_column(ui, UPTO(600)) {
+        cui_voice_session(ui, "call", state, lv, n, .owners = own, .transcript = spoken, .upcoming = said->text + k,
+                          .speaker = said->who, .muted = &vs_muted);
+    }
+}
+
 SCENE(suggestions) {
     static const cui_prompt_suggestion sugg[] = {
         { CUI_ICON_CODE, "Explain this code", "Walk through what it does" },
@@ -2479,7 +2635,7 @@ static void mosaic_metrics(cui_ctx *ui) {
     static const float s1[] = { 268, 255, 262, 249, 251, 240, 236, 229, 231, 222 };
     static const float s2[] = { 3, 4, 3, 5, 4, 6, 5, 6, 7, 7 };
     cui_box(ui, .dir = CUI_GRID, .columns = 2, .gap = 20, .width = CUI_FILL) {
-        cui_metric(ui, "Median build, 30 days", "3m 42s", .delta = -17.6f, .delta_label = "-17.6%", .lower_is_better = true, .spark = s1, .spark_count = 10, .icon = CUI_ICON_CLOCK);
+        cui_metric(ui, "Median build", "3m 42s", .delta = -17.6f, .delta_label = "-17.6%", .lower_is_better = true, .spark = s1, .spark_count = 10, .icon = CUI_ICON_CLOCK);
         cui_metric(ui, "Flaky tests", "7", .delta = 2, .delta_label = "+2 this week", .lower_is_better = true, .spark = s2, .spark_count = 10, .icon = CUI_ICON_TRIANGLE_ALERT);
     }
 }
@@ -3454,6 +3610,172 @@ static void scene_tw_calendar(cui_ctx *ui, int f) {
     stage(ui, &look_plain, tw_calendar_body);
 }
 
+/* ---- instruments ---- */
+
+SCENE(dot_chart) {
+    /* a week of requests per hour: the six days before in grey, today in the accent */
+    static float base[168], today[168];
+    for (int i = 0; i < 168; i++) {
+        float h = (float)(i % 24), day = (float)(i / 24);
+        float load = 18 + 42 * expf(-(h - 14) * (h - 14) / 18.0f) + 6 * sinf(day * 1.7f + h * 0.4f);
+        base[i] = i < 144 ? load : 0;
+        today[i] = i >= 144 ? load * 1.25f : 0;
+    }
+    cui_dot_series series[2] = { { base, "Last six days", false }, { today, "Today", true } };
+    cui_box(ui, UPTO(860))
+        cui_dot_chart(ui, "requests", series, 2, 168, .x_min = 0, .x_max = 168, .x_step = 24, .x_format = "%.0f h",
+                      .height = 220, .unit = "REQ/S");
+}
+
+SCENE(chart_annotations) {
+    /* response times from 14:00 to 15:00, one sample a minute; x is in hours */
+    static float wait[61];
+    for (int i = 0; i < 61; i++) wait[i] = 120 + 90 * sinf(i * 0.21f) + (i > 38 && i < 46 ? 260 : 0) + (float)(i % 7) * 6;
+    const cui_chart_annotation notes[] = {
+        { CUI_ANNOTATION_Y, 0, 300, "SLO", NULL, true },
+        { CUI_ANNOTATION_X, 14 + 39 / 60.0, 0, "DEPLOY 4.12", "14:39", false },
+        { CUI_ANNOTATION_X, 14 + 46 / 60.0, 0, "ROLLBACK", "14:46", false },
+        { CUI_ANNOTATION_POINT, 14 + 42 / 60.0, 515, "PEAK 515 MS", NULL, false },
+    };
+    cui_dot_series series[1] = { { wait, "Wait", false } };
+    cui_box(ui, UPTO(820))
+        cui_dot_chart(ui, "wait", series, 1, 61, .x_min = 14, .x_max = 15, .x_units = CUI_AXIS_HOURS, .x_step = 10 / 60.0,
+                      .height = 240, .min = 0, .max = 600, .unit = "MS", .annotations = notes, .annotation_count = 4);
+}
+
+SCENE(event_track) {
+    static double doses[8] = { 7.5, 13, 19.25 };
+    static int count = 3, selected = 1;
+    cui_column(ui, .gap = 10, UPTO(720)) {
+        cui_text(ui, "DOSES TODAY", .font = CUI_FONT_MONO, .color = CUI_COLOR_TEXT_MUTED, .size = 11);
+        cui_event_track(ui, "doses", doses, &count, 8, 6, 30, .step = 0.25, .units = CUI_AXIS_HOURS, .label_step = 3, .selected = &selected);
+    }
+}
+
+SCENE(readouts) {
+    cui_row(ui, .gap = 44, .wrap = true, .align = CUI_ALIGN_END) {
+        cui_readout(ui, "STILL IN YOU AT 23:00", "54", .unit = "MG", .detail = "UNDER THE LINE BY 00:10", .size = CUI_SIZE_LG);
+        cui_readout(ui, "PEAK", "203", .unit = "MG", .detail = "13:06");
+        cui_readout(ui, "HALF-LIFE", "5.0", .unit = "H", .detail = "ADULT AVERAGE", .size = CUI_SIZE_SM);
+        cui_readout(ui, "OVER THE LINE", "2", .unit = "CUPS", .detail = "AFTER 14:00", .size = CUI_SIZE_SM, .accent = true);
+    }
+}
+
+SCENE(dot_display) {
+    cui_column(ui, .gap = 18) {
+        cui_dot_display(ui, "23:41:07", .pitch = 6);
+        cui_dot_display(ui, "LAST CUP BY 10:45", .pitch = 3);
+        cui_dot_display(ui, "21.5\xc2\xb0" "C  \xc2\xb7  48% RH", .pitch = 3, .accent = true);
+    }
+}
+
+/* ---- creative controls ---- */
+static const char *const cc_tag_names[] = { "Pending", "In progress", "Submitted", "In review", "Success", "Failed", "Expired" };
+static bool cc_tag_gone[7];
+static void body_status_tag(cui_ctx *ui) {
+    cui_column(ui, .gap = 18, UPTO(560), .align = CUI_ALIGN_CENTER) {
+        cui_row(ui, .gap = 8, .wrap = true, .justify = CUI_JUSTIFY_CENTER) {
+            for (int k = 0; k < 7; k++) cui_status_tag(ui, cc_tag_names[k], (cui_tag_status)k);
+        }
+        cui_column(ui, .width = CUI_FILL, .bg = CUI_COLOR_SURFACE, .border = 1, .radius = 14, .clip = true) {
+            cui_row(ui, .width = CUI_FILL, .pad_x = 14, .pad_y = 10, .gap = 8, .align = CUI_ALIGN_CENTER, .bg = CUI_COLOR_SURFACE_MUTED, .radius_tl = 14, .radius_tr = 14) {
+                cui_icon(ui, CUI_ICON_TAG, 16, CUI_COLOR_TEXT_SECONDARY);
+                cui_text(ui, "Tags", .font = CUI_FONT_MEDIUM, .color = CUI_COLOR_TEXT_SECONDARY);
+                cui_spacer(ui);
+                cui_text(ui, "small, removable", .size = 12, .color = CUI_COLOR_TEXT_MUTED);
+            }
+            cui_separator(ui);
+            cui_row(ui, .width = CUI_FILL, .pad = 14, .gap = 6, .wrap = true) {
+                for (int k = 0; k < 7; k++)
+                    if (!cc_tag_gone[k] && cui_status_tag(ui, cc_tag_names[k], (cui_tag_status)k, .size = CUI_SIZE_SM, .removable = true, .id = cc_tag_names[k] + 0))
+                        cc_tag_gone[k] = true;
+            }
+        }
+    }
+}
+/* the pointer rests on the removable "Submitted" tag, so its x shows */
+static void scene_status_tag(cui_ctx *ui, int f) {
+    if (f < 0) {
+        cui_rect r = cui_get_rect(ui, cui_make_id(ui, "Submitted"));
+        if (-f - 1 == 3 && r.w > 0) cui_input_mouse_move(ui, r.x + r.w * 0.5f, r.y + r.h * 0.5f);
+        return;
+    }
+    frame_wrap(ui, body_status_tag);
+}
+
+static float cc_coffee = 0.37f, cc_train = 0.8f;
+SCENE(ratio_slider) {
+    cui_column(ui, .gap = 14, UPTO(560)) {
+        cui_ratio_slider(ui, "COFFEE", "MILK", &cc_coffee, .tone = CUI_TONE_WARNING);
+        cui_ratio_slider(ui, "TRAIN", "TEST", &cc_train, .tone = CUI_TONE_INFO);
+    }
+}
+
+static float cc_hue = 190, cc_kelvin = 5600, cc_opacity = 0.72f;
+static int cc_variations = 3, cc_quality = 1;
+static bool cc_picking;
+SCENE(gradient_slider) {
+    cui_box(ui, .dir = CUI_GRID, .columns = 2, .min_column_width = 250, .gap = 12, UPTO(620)) {
+        cui_gradient_slider(ui, "Hue", &cc_hue, 0, 360, .swatch = true);
+        if (cui_gradient_slider(ui, "White balance", &cc_kelvin, 2500, 10000, .track = CUI_GRADIENT_TEMPERATURE, .step = 100,
+                                .tool = CUI_ICON_TARGET, .tool_tooltip = "Pick from image", .tool_on = cc_picking) & CUI_WELL_ACTION)
+            cc_picking = !cc_picking;
+        cui_gradient_slider(ui, "Opacity", &cc_opacity, 0, 1, .track = CUI_GRADIENT_OPACITY, .color = CUI_RGB(0x2bb8a6));   /* the brush color */
+    }
+}
+SCENE(step_slider) {
+    static const char *const quality[] = { "Draft", "Good", "Best" };
+    cui_box(ui, .dir = CUI_GRID, .columns = 2, .min_column_width = 250, .gap = 12, UPTO(620)) {
+        cui_step_slider(ui, "Variations", &cc_variations, 1, 4, .tool = CUI_ICON_REFRESH_CW, .tool_tooltip = "Generate");
+        cui_step_slider(ui, "Quality", &cc_quality, 0, 2, .labels = quality);
+    }
+}
+
+static cui_color cc_palette[5] = { CUI_RGB(0xeef0f5), CUI_RGB(0x5c6370), CUI_RGB(0x37c6d0), CUI_RGB(0x1f3a5f), CUI_RGB(0xf2bd68) };
+static bool cc_locked[5] = { false, true, false, true, false };
+static uint32_t cc_palette_seed = 7;
+static void body_palette_strip(cui_ctx *ui) {
+    cui_column(ui, UPTO(620)) {
+        cui_palette_strip(ui, "Color palette", cc_palette, cc_locked, 5, .seed = &cc_palette_seed, .value = "Click a swatch to lock it");
+    }
+}
+/* the pointer rests on the third swatch, so it widens and shows its code */
+static void scene_palette_strip(cui_ctx *ui, int f) {
+    if (f < 0) {
+        cui_rect r = cui_get_rect(ui, cui_make_id(ui, "Color palette"));
+        if (-f - 1 == 3 && r.w > 0) cui_input_mouse_move(ui, r.x + 14 + (r.w - 14 - 12 - 40) * 0.5f, r.y + r.h - 28);
+        return;
+    }
+    frame_wrap(ui, body_palette_strip);
+}
+
+static int cc_aspect = 1;
+SCENE(aspect_picker) {
+    cui_column(ui, UPTO(620)) {
+        cui_aspect_picker(ui, "Aspect ratio", &cc_aspect, .custom = true);
+    }
+}
+
+static int cc_background = 0, cc_format = 0;
+SCENE(option_action) {
+    static const char *const bg[] = { "hidden", "visible" };
+    static const char *const fmt[] = { "png", "jpg", "webp" };
+    static const char *const sizes[] = { "2.4 MB", "640 KB", "410 KB" };
+    cui_box(ui, .dir = CUI_GRID, .columns = 2, .min_column_width = 250, .gap = 12, UPTO(620)) {
+        cui_option_action(ui, "Background", bg, 2, &cc_background, CUI_ICON_SCISSORS, .tooltip = "Cut out", .value = "erase");
+        cui_option_action(ui, "Save as", fmt, 3, &cc_format, CUI_ICON_DOWNLOAD, .tooltip = "Download", .value = sizes[cc_format]);
+    }
+}
+
+static uint32_t cc_seed = 1234567890u, cc_seed2 = 3141592653u;
+static bool cc_seed_fixed = false, cc_seed2_fixed = true;
+SCENE(seed_field) {
+    cui_column(ui, .gap = 12, UPTO(620)) {
+        cui_seed_field(ui, "Seed", &cc_seed, &cc_seed_fixed, .value = cc_seed_fixed ? "Same image every run" : "Random each run");
+        cui_seed_field(ui, "Noise seed", &cc_seed2, &cc_seed2_fixed, .value = cc_seed2_fixed ? "Same image every run" : "Random each run");
+    }
+}
+
 typedef struct { const char *name; scene_fn fn; float w, h; bool dark_too; bool dark_only; cui_accent accent; } scene;
 
 static void render(const char *dir, const scene *s, bool dark, cui_sw_renderer *sw) {
@@ -3884,6 +4206,185 @@ static void scene_dev2_api(cui_ctx *ui, int f) {
     frame_wrap(ui, body_api);
 }
 
+/* ---- canvas and bars: grouped toolbar, format bar, live cursors, canvas controls, result card, selection bar ---- */
+static bool cb_num = true, cb_bold, cb_italic;
+static int cb_mode;
+static void cb_grouped(cui_ctx *ui, const char *id) {
+    static const char *const modes[] = { CUI_ICON_MOVE, CUI_ICON_SQUARE_PEN, CUI_ICON_TYPE };
+    static const char *const mode_names[] = { "Move", "Draw", "Text" };
+    cui_toolbar(ui, id, .style = CUI_TOOLBAR_GROUPED) {
+        cui_toolbar_group(ui) {
+            cui_toolbar_button(ui, CUI_ICON_UNDO_2, .tooltip = "Undo", .shortcut = "Ctrl Z");
+            cui_toolbar_button(ui, CUI_ICON_REDO_2, .tooltip = "Redo", .shortcut = "Ctrl Shift Z");
+        }
+        cui_toolbar_group(ui) {
+            cui_toolbar_button(ui, NULL, .label = "123", .tooltip = "Numbers", .toggle = &cb_num);
+            cui_toolbar_button(ui, CUI_ICON_BOLD, .tooltip = "Bold", .toggle = &cb_bold);
+            cui_toolbar_button(ui, CUI_ICON_ITALIC, .tooltip = "Italic", .toggle = &cb_italic);
+            cui_toolbar_radio(ui, "mode", modes, 3, &cb_mode, .labels = mode_names);
+        }
+        cui_toolbar_primary(ui, CUI_ICON_SPARKLES, .tooltip = "Generate");
+    }
+}
+SCENE(grouped_toolbar) {
+    cui_column(ui, .gap = 20, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
+        cb_grouped(ui, "grouped");
+        cui_box(ui, .width = CUI_FILL, .max_width = 300, .align = CUI_ALIGN_CENTER) { cb_grouped(ui, "narrow"); }
+    }
+}
+
+static cui_text_format cb_fmt;
+static void body_format_bar(cui_ctx *ui) {
+    cui_column(ui, .width = CUI_FILL, .height = CUI_FILL, .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_START) { cui_format_bar(ui, "fmt", &cb_fmt); }
+}
+/* the style menu, open */
+static void scene_format_bar(cui_ctx *ui, int f) {
+    if (f < 0) {
+        int t = -f - 1;
+        if (t == 0) cb_fmt = (cui_text_format){ CUI_TONE_ROSE, true, false, false, 0, 44, CUI_FORMAT_ALIGN_LEFT, CUI_FORMAT_LIST_NONE };
+        cui_rect r = cui_get_rect(ui, nested_id(ui, "fmt", "#style"));
+        if (t == 4) move_to(ui, r, 0.5f, 0.5f);
+        if (t == 5) cui_input_mouse_button(ui, CUI_MOUSE_LEFT, true);
+        if (t == 6) cui_input_mouse_button(ui, CUI_MOUSE_LEFT, false);
+        if (t == 7) cui_input_mouse_leave(ui);
+        return;
+    }
+    frame_wrap(ui, body_format_bar);
+}
+
+/* a small prompt graph with three people on it; the cursors are pinned so the picture holds still */
+enum { CB_POS = 1, CB_NEG, CB_GEN_POS, CB_GEN_NEG };
+static cui_node_view cb_view = { 10, 6, 1 };
+static float cb_nodes[3][2] = { { 36, 64 }, { 36, 206 }, { 330, 124 } };
+static bool cb_grid = true;
+static void cb_canvas(cui_ctx *ui, const char *id, bool people, cui_node_view *view, float height) {
+    static const cui_live_user users[] = {
+        { .name = "Paul", .tone = CUI_TONE_WARNING, .x = 118, .y = 172, .speaking = true },
+        { .name = "Kate", .tone = CUI_TONE_INFO, .x = 432, .y = 156, .says = "Bumping steps to 40?" },
+        { .name = "Mario", .tone = CUI_TONE_ROSE, .x = 236, .y = 306 },
+    };
+    cui_canvas_toggle toggles[] = { { CUI_ICON_EYE, "Show grid", &cb_grid }, { CUI_ICON_LAYERS, "Layers", NULL } };
+    cui_box(ui, .dir = CUI_STACK, .width = CUI_FILL, .height = CUI_PX(height), .radius = 14, .clip = true) {
+        if (cui_node_editor_begin(ui, id, view, .height = CUI_PX(height), .no_grid = !cb_grid)) {
+            static const char *titles[3] = { "Positive", "Negative", "Generate" };
+            static const char *bodies[3] = { "A black bear, minimalist style, soft gradients", "No text, no people", "Steps 30 \xc2\xb7 dpm++ 2M" };
+            for (int i = 0; i < 3; i++) {
+                cui_node_begin(ui, i, &cb_nodes[i][0], &cb_nodes[i][1], titles[i], .width = 184);
+                if (i < 2) cui_node_output(ui, i == 0 ? CB_POS : CB_NEG, i == 0 ? "Prompt" : "Avoid", .type = 1);
+                else { cui_node_input(ui, CB_GEN_POS, "Prompt", .type = 1); cui_node_input(ui, CB_GEN_NEG, "Avoid", .type = 1); }
+                cui_node_content(ui) { cui_text(ui, bodies[i], .size = 12, .color = CUI_COLOR_TEXT_SECONDARY); }
+                cui_node_end(ui);
+                if (people && i == 2) cui_selection_ring(ui, CUI_COLOR_WARNING, .name = "Paul");
+            }
+            cui_node_link(ui, 1, CB_POS, CB_GEN_POS);
+            cui_node_link(ui, 2, CB_NEG, CB_GEN_NEG);
+            cui_node_editor_end(ui);
+        }
+        cui_rect bounds = { cb_nodes[0][0], cb_nodes[0][1], cb_nodes[2][0] + 184 - cb_nodes[0][0], 290 };
+        cui_canvas_controls(ui, "zoom", view, .content = bounds, .toggles = toggles, .toggle_count = 2);
+        if (people) {
+            cui_live_cursors(ui, "people", users, 3, .view = view);
+            cui_box(ui, .pad = 12) { cui_presence_pill(ui, "here", users, 3); }
+        }
+    }
+}
+SCENE(live_cursors) { cb_canvas(ui, "prompt", true, &cb_view, 360); }
+
+static cui_node_view cb_view2;
+static void body_canvas_controls(cui_ctx *ui) { cb_canvas(ui, "zoomed", false, &cb_view2, 320); }
+/* one step out from the rail */
+static void scene_canvas_controls(cui_ctx *ui, int f) {
+    if (f < 0) {
+        int t = -f - 1;
+        if (t == 0) cb_view2 = (cui_node_view){ 10, 6, 1 };   /* the light and dark renders each start at 100% */
+        cui_rect r = cui_get_rect(ui, nested_id(ui, "zoom", "#zoom"));
+        if (t == 4) cui_input_mouse_move(ui, r.x + r.w * 0.5f, r.y + r.h + 20);
+        if (t == 5) cui_input_mouse_button(ui, CUI_MOUSE_LEFT, true);
+        if (t == 6) cui_input_mouse_button(ui, CUI_MOUSE_LEFT, false);
+        if (t == 7) cui_input_mouse_leave(ui);
+        return;
+    }
+    frame_wrap(ui, body_canvas_controls);
+}
+
+/* a picture made here: a sky, a low sun and soft hills */
+static cui_texture cb_result_image(cui_ctx *ui) {
+    static cui_ctx *made_for;
+    static cui_texture tex;
+    if (made_for == ui && tex) return tex;
+    enum { W = 288, H = 360 };
+    static unsigned char px[W * H * 4];
+    for (int y = 0; y < H; y++)
+        for (int x = 0; x < W; x++) {
+            float acc[3] = { 0, 0, 0 };
+            for (int s = 0; s < 4; s++) {   /* four samples a pixel, for smooth edges */
+            float fx = x + 0.25f + 0.5f * (s & 1), fy = y + 0.25f + 0.5f * (s >> 1);
+            float v = fy / H, r, g, b;
+            if (v < 0.48f) { float k = v / 0.48f; r = 118 + (185 - 118) * k; g = 169 + (212 - 169) * k; b = 236 + (246 - 236) * k; }
+            else { float k = (v - 0.48f) / 0.52f; r = 185 + (242 - 185) * k; g = 212 + (217 - 212) * k; b = 246 + (203 - 246) * k; }
+            float dx = fx - W * 0.66f, dy = fy - H * 0.32f, d = sqrtf(dx * dx + dy * dy) / W;
+            float sun = d < 0.08f ? 1 : d < 0.24f ? 0.55f * (1 - (d - 0.09f) / 0.15f) : 0;
+            if (sun > 0) { sun = sun > 1 ? 1 : sun; r += (255 - r) * sun; g += (247 - g) * sun; b += (236 - b) * sun; }
+            static const float hills[3][6] = { { 0.18f, 1.04f, 1.30f, 0.62f, 0.42f, 0 }, { 0.92f, 1.08f, 1.20f, 0.58f, 0.44f, 1 }, { 0.5f, 1.18f, 1.6f, 0.70f, 0.40f, 2 } };
+            static const float hc[3][3] = { { 238, 143, 120 }, { 184, 96, 106 }, { 122, 63, 82 } };
+            for (int h = 0; h < 3; h++) {
+                float ex = (fx / W - hills[h][0]) / (hills[h][2] * 0.5f * hills[h][4] * 2), ey = (v - hills[h][1]) / (hills[h][3] * 0.5f * hills[h][4] * 2);
+                if (ex * ex + ey * ey < 1) { r = hc[h][0]; g = hc[h][1]; b = hc[h][2]; }
+            }
+            acc[0] += r * 0.25f; acc[1] += g * 0.25f; acc[2] += b * 0.25f;
+            }
+            unsigned char *p = &px[(y * W + x) * 4];
+            p[0] = (unsigned char)acc[0]; p[1] = (unsigned char)acc[1]; p[2] = (unsigned char)acc[2]; p[3] = 255;
+        }
+    tex = cui_image_create(ui, W, H, px);
+    made_for = ui;
+    return tex;
+}
+static bool cb_saved;
+static int cb_scale = 1, cb_type;
+static void cb_result(cui_ctx *ui) {
+    static const char *const scales[] = { "1x", "2x", "4x" }, *const types[] = { "PNG", "JPG", "WEBP" };
+    cui_column(ui, .gap = 10, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) {
+        cui_result_card(ui, "result", cb_result_image(ui), "Final result", .caption = "Minimal illustration, soft gradients and smooth shapes against a clear sky",
+                        .badge = "Done in 4.2 s", .image_w = 288, .image_h = 360, .width = CUI_PX(344));
+        cui_toolbar(ui, "result-actions", .style = CUI_TOOLBAR_FLOATING) {
+            cui_toolbar_button(ui, CUI_ICON_MAXIMIZE_2, .tooltip = "Expand");
+            cui_toolbar_button(ui, CUI_ICON_BOOKMARK, .tooltip = "Save", .toggle = &cb_saved, .tone = CUI_TONE_WARNING);
+            cui_toolbar_button(ui, CUI_ICON_COPY, .tooltip = "Copy");
+            cui_toolbar_button(ui, CUI_ICON_PANEL_LEFT, .tooltip = "Compare");
+            cui_toolbar_separator(ui);
+            cui_toolbar_cycle(ui, "scale", scales, 3, &cb_scale, .tooltip = "Scale");
+            cui_toolbar_cycle(ui, "type", types, 3, &cb_type, .tooltip = "Format");
+            cui_toolbar_separator(ui);
+            cui_toolbar_button(ui, CUI_ICON_DOWNLOAD, .tooltip = "Download");
+        }
+    }
+}
+SCENE(result_card) { cui_column(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER) { cb_result(ui); } }
+
+static bool cb_picked[5] = { true, true, true, false, false };
+static void cb_files(cui_ctx *ui) {
+    static const char *names[] = { "hero-dark.png", "hero-light.png", "social-card.png", "icon-512.png", "thumb@2x.png" };
+    static const char *sizes[] = { "2.4 MB", "2.3 MB", "812 KB", "96 KB", "140 KB" };
+    static const cui_selection_action acts[] = { { CUI_ICON_MOVE, "Move" }, { CUI_ICON_COPY, "Copy" }, { CUI_ICON_TRASH_2, "Delete", CUI_TONE_DANGER } };
+    cui_column(ui, .id = "files", .width = CUI_FILL, .max_width = 520, .pad = 4, .gap = 2, .bg = CUI_COLOR_SURFACE, .border = 1, .radius = 14) {
+        for (int k = 0; k < 5; k++) {
+            cui_push_id_int(ui, k);
+            cui_row(ui, .width = CUI_FILL, .height = CUI_PX(44), .pad_x = 10, .gap = 12, .align = CUI_ALIGN_CENTER, .radius = 10,
+                    .bg = cb_picked[k] ? CUI_COLOR_ACCENT_SUBTLE : (cui_color){ 0 }) {
+                cui_checkbox(ui, "##pick", &cb_picked[k]);
+                cui_icon(ui, CUI_ICON_IMAGE, 15, cui_color_of(ui, CUI_COLOR_TEXT_MUTED));
+                cui_box(ui, .width = CUI_FILL) { cui_label(ui, names[k]); }
+                cui_text(ui, sizes[k], .size = 12, .color = CUI_COLOR_TEXT_MUTED, .tabular = true);
+            }
+            cui_pop_id(ui);
+        }
+    }
+    int a = cui_selection_bar(ui, "bulk", 0, acts, 3, .selected = cb_picked, .item_count = 5, .anchor = cui_make_id(ui, "files"));
+    if (a == 2) for (int k = 0; k < 5; k++) cb_picked[k] = false;
+}
+SCENE(selection_bar) { cui_column(ui, .width = CUI_FILL, .align = CUI_ALIGN_CENTER, .pad_bottom = 56) { cb_files(ui); } }
+
 int main(int argc, char **argv) {
     const char *dir = argc > 1 ? argv[1] : ".";
     static const scene scenes[] = {
@@ -3959,12 +4460,24 @@ int main(int argc, char **argv) {
         { "reasoning-tools", scene_reasoning_tools, 680, 640, true }, { "agent-plan", scene_agent_plan, 820, 340, true },
         { "sources", scene_sources, 680, 380, true }, { "composer", scene_composer, 640, 190, true }, { "model-picker", scene_model_picker, 380, 300, true },
         { "voice-orb", scene_voice_orb, 760, 230, true }, { "suggestions", scene_suggestions, 640, 260, true },
+        { "voice-wave", scene_voice_wave, 620, 290, true, false, CUI_ACCENT_GREEN }, { "voice-recorder", scene_voice_recorder, 620, 270, true, false, CUI_ACCENT_GREEN },
+        { "voice-note", scene_voice_note, 620, 190, true, false, CUI_ACCENT_GREEN }, { "voice-session", scene_voice_session, 660, 290, true, false, CUI_ACCENT_GREEN },
         { "app-chrome", scene_app_chrome, 900, 440, true }, { "menu-bar", scene_menu_bar, 640, 360, true },
         { "docking", scene_docking, 960, 560, true },
         { "toolbar", scene_toolbar, 640, 370, true }, { "status-bar", scene_status_bar, 820, 160, true },
         { "document-tabs", scene_document_tabs, 720, 230, true },
+        { "dot-chart", scene_dot_chart, 900, 280, true, false, CUI_ACCENT_BLUE }, { "chart-annotations", scene_chart_annotations, 860, 300, true, false, CUI_ACCENT_BLUE },
+        { "event-track", scene_event_track, 760, 130, true, false, CUI_ACCENT_BLUE }, { "readouts", scene_readouts, 860, 160, true, false, CUI_ACCENT_BLUE },
+        { "dot-display", scene_dot_display, 420, 200, true, false, CUI_ACCENT_BLUE },
+        { "grouped-toolbar", scene_grouped_toolbar, 620, 220, true }, { "format-bar", scene_format_bar, 640, 330, true, false, CUI_ACCENT_GREEN },
+        { "live-cursors", scene_live_cursors, 760, 416, true }, { "canvas-controls", scene_canvas_controls, 760, 376, true },
+        { "result-card", scene_result_card, 440, 560, true }, { "selection-bar", scene_selection_bar, 600, 400, true, false, CUI_ACCENT_GREEN },
         { "tw-studio", scene_tw_studio, 1200, 675, true, false, CUI_ACCENT_NEUTRAL }, { "tw-audio", scene_tw_audio, 960, 540, true, false, CUI_ACCENT_NEUTRAL },
         { "tw-markets", scene_tw_markets, 1200, 675, true, false, CUI_ACCENT_NEUTRAL }, { "tw-calendar", scene_tw_calendar, 1200, 675, true, false, CUI_ACCENT_NEUTRAL },
+        { "status-tag", scene_status_tag, 620, 270, true }, { "ratio-slider", scene_ratio_slider, 620, 180, true },
+        { "gradient-slider", scene_gradient_slider, 680, 250, true }, { "step-slider", scene_step_slider, 680, 150, true },
+        { "palette-strip", scene_palette_strip, 680, 150, true }, { "aspect-picker", scene_aspect_picker, 680, 160, true },
+        { "option-action", scene_option_action, 680, 150, true }, { "seed-field", scene_seed_field, 680, 240, true },
     };
     cui_sw_renderer *sw = cui_sw_create();
     if (argc <= 2 || strcmp(argv[2], "button-states") == 0) { render_states(dir, false, sw); render_states(dir, true, sw); }

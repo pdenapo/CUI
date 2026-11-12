@@ -23,6 +23,15 @@ compile_commands.json
 /web/site/fonts
 /web/site/images
 /web/site/src/
+/web/site/c/
+/web/site/guide/
+/web/site/components/
+/web/site/changelog/
+/web/site/showcase/
+/web/site/apps/
+/web/site/reference/
+/web/site/sitemap.xml
+/web/site/robots.txt
 
 # local tool state (the repository's own CLAUDE.md is tracked; personal ones are not)
 /.claude/

@@ -60,9 +60,9 @@ void cui_chat_message_ex(cui_ctx *ui, const char *text, const cui_chat_opts *o) 
     int bubble = cui__node_new(ui, 0);
     cui_node *bn = &ui->nodes[bubble];
     bn->pad[0] = bn->pad[2] = 8; bn->pad[1] = bn->pad[3] = 13;
-    float big = 18, small = 6;
-    if (o->mine) bn->radius = (cui_corners){ big, o->grouped ? small : big, o->last_in_group ? big : small, big };
-    else bn->radius = (cui_corners){ o->grouped ? small : big, big, big, o->last_in_group ? big : small };
+    float corner = 18, tight = 6;   /* not "small": the Windows SDK defines it as a macro */
+    if (o->mine) bn->radius = (cui_corners){ corner, o->grouped ? tight : corner, o->last_in_group ? corner : tight, corner };
+    else bn->radius = (cui_corners){ o->grouped ? tight : corner, corner, corner, o->last_in_group ? corner : tight };
     if (o->mine) bn->bg = cui__accent_bg(ui);
     else bn->bg = ui->mode == CUI_THEME_DARK ? cui_mix(CUI_C(ui, SURFACE), CUI_C(ui, FOREGROUND), 0.08f) : CUI_C(ui, SURFACE_MUTED);
     cui__open(ui, bubble);

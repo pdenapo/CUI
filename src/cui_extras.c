@@ -395,8 +395,7 @@ void cui_button_group_end(cui_ctx *ui) {
     if (gn->first >= 0 && ui->nodes[gn->first].id && !gn->id) {
         gn->id = ui->nodes[gn->first].id ^ 0xB6A0u;
         float natural = 0;
-        int nb = 0;
-        for (int c = gn->first; c >= 0; c = ui->nodes[c].next, nb++) {
+        for (int c = gn->first; c >= 0; c = ui->nodes[c].next) {
             cui_node *ch = &ui->nodes[c];
             if (ch->w.kind == CUI_SIZE_FIXED) { natural += ch->w.value; continue; }
             if (ch->w.kind != CUI_SIZE_FIT) { natural = -1; break; }
@@ -437,6 +436,8 @@ void cui_button_group_end(cui_ctx *ui) {
 
 typedef struct { double copied_at; } cui__copy_state;
 
+/** Keep the button ID stable across the Copy and Copied presentations so
+ * keyboard focus survives both transitions. Copying again restarts the timer. */
 bool cui_copy_button(cui_ctx *ui, const char *id_str, const char *text) {
     cui_id sid = cui_make_id(ui, id_str) ^ 0xC0B7u;
     cui__copy_state *st = cui_state(ui, sid, sizeof *st);
@@ -445,7 +446,7 @@ bool cui_copy_button(cui_ctx *ui, const char *id_str, const char *text) {
     memset(&bo, 0, sizeof bo);
     bo.tooltip = recent ? "Copied" : "Copy";
     cui_push_id(ui, id_str);
-    bool clicked = cui_icon_button_ex(ui, recent ? CUI_ICON_CHECK : CUI_ICON_COPY, &bo);
+    bool clicked = cui__icon_button_id(ui, cui_make_id(ui, "#copy-button"), recent ? CUI_ICON_CHECK : CUI_ICON_COPY, &bo);
     cui_pop_id(ui);
     if (recent) {
         /* the check is green while it confirms */

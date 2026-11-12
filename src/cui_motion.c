@@ -971,12 +971,6 @@ bool cui_waveform_ex(cui_ctx *ui, const char *id_str, const float *peaks, int co
 /* Now playing                                                              */
 /* ------------------------------------------------------------------------ */
 
-static const char *cui__mmss(cui_ctx *ui, float s) {
-    if (!(s >= 0)) s = 0;
-    int t = (int)s;
-    return cui__frame_printf(ui, "%d:%02d", t / 60, t % 60);
-}
-
 typedef struct { float frac, hover; } cui__np_scrub_paint;
 static void cui__paint_np_scrub(cui_ctx *ui, cui_node *n, void *data) {
     cui__np_scrub_paint *p = data;

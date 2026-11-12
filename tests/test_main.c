@@ -392,6 +392,136 @@ static void key(cui_ctx *ui, build_fn fn, void *u, cui_key k, int mods) {
     run(ui, fn, u, 1);
 }
 
+static void build_copy_button(cui_ctx *ui, void *u) {
+    bool *clicked = u;
+    *clicked = cui_copy_button(ui, "copy", "Copy this text");
+}
+
+static void test_copy_button_focus(void) {
+    printf("copy button: keyboard activation through confirmation\n");
+    cui_ctx *ui = new_ctx();
+    bool clicked = false;
+    run(ui, build_copy_button, &clicked, 1);
+    key(ui, build_copy_button, &clicked, CUI_KEY_TAB, 0);
+    g_clip[0] = '\0';
+    key(ui, build_copy_button, &clicked, CUI_KEY_ENTER, 0);
+    CHECK(clicked);
+    CHECK(strcmp(g_clip, "Copy this text") == 0);
+
+    run(ui, build_copy_button, &clicked, 1);   /* show the check mark */
+    g_clip[0] = '\0';
+    key(ui, build_copy_button, &clicked, CUI_KEY_ENTER, 0);
+    CHECK(clicked);
+    CHECK(strcmp(g_clip, "Copy this text") == 0);
+
+    run(ui, build_copy_button, &clicked, 120);   /* let the confirmation expire */
+    g_clip[0] = '\0';
+    key(ui, build_copy_button, &clicked, CUI_KEY_SPACE, 0);
+    CHECK(clicked);
+    CHECK(strcmp(g_clip, "Copy this text") == 0);
+    cui_destroy(ui);
+}
+
+/* the clock takes the whole idle interval for timers, but not an absurd one: a first dt of
+ * "seconds since 1970" must not throw the clock where a float stops counting frames */
+static void test_clock_step_bound(void) {
+    printf("frame clock: idle intervals count, absurd ones are bounded\n");
+    cui_ctx *ui = new_ctx();
+    cui_begin_frame(ui, 1.0f / 60.0f); cui_end_frame(ui);
+    double t0 = cui_time(ui);
+    cui_begin_frame(ui, 2.5f); cui_end_frame(ui);              /* an idle wait of 2.5 s counts in full */
+    CHECK(fabs(cui_time(ui) - t0 - 2.5) < 1e-6);
+    double t1 = cui_time(ui);
+    cui_begin_frame(ui, 1.7e9f); cui_end_frame(ui);            /* now - 0 */
+    CHECK(cui_time(ui) - t1 <= 3600.0 + 1e-3);
+    cui_begin_frame(ui, -1.0f); cui_end_frame(ui);             /* negative and NaN count as no time */
+    cui_begin_frame(ui, NAN); cui_end_frame(ui);
+    CHECK(cui_time(ui) - t1 <= 3600.0 + 1e-3);
+    cui_destroy(ui);
+}
+
+/* cui_set_clipboard_text / cui_get_clipboard_text: the platform hooks, for menu items
+ * that copy or paste (issue #32) */
+static void test_clipboard_api(void) {
+    printf("clipboard: set and get through the platform hooks\n");
+    cui_ctx *ui = new_ctx();
+    g_clip[0] = '\0';
+    cui_set_clipboard_text(ui, "/home/ada/notes.txt");
+    CHECK(strcmp(g_clip, "/home/ada/notes.txt") == 0);
+    CHECK(strcmp(cui_get_clipboard_text(ui), "/home/ada/notes.txt") == 0);
+    cui_set_clipboard_text(ui, NULL);                 /* NULL leaves the clipboard alone */
+    CHECK(strcmp(g_clip, "/home/ada/notes.txt") == 0);
+    cui_destroy(ui);
+    /* no platform hooks: nothing happens, and getting gives an empty string */
+    cui_ctx *bare = cui_create(&(cui_ctx_desc){ .renderer = cui_sw_iface(g_sw) });
+    cui_set_clipboard_text(bare, "ignored");
+    CHECK(cui_get_clipboard_text(bare) != NULL && cui_get_clipboard_text(bare)[0] == '\0');
+    CHECK(strcmp(g_clip, "/home/ada/notes.txt") == 0);
+    cui_destroy(bare);
+}
+
+/* Nav items: the group's highlight follows the selected item, and goes away
+ * when no item of the group is selected (issue #35). */
+typedef struct { int sel; bool click; cui_id item[3]; } nav_ctx;
+static void build_nav(cui_ctx *ui, void *u) {
+    nav_ctx *n = u;
+    static const char *const names[] = { "Inbox", "Projects", "Calendar" };
+    cui_column(ui, .pad = 20, .gap = 4, .width = CUI_PX(240)) {
+        for (int k = 0; k < 3; k++) {
+            /* as apps write it: the selection changes when the item reports a click */
+            if (cui_nav_item(ui, names[k], .selected = n->sel == k) && n->click) n->sel = k;
+            n->item[k] = cui_last_id(ui);
+        }
+    }
+}
+/* is the row's left edge painted (the highlight) rather than the background? */
+static bool nav_lit(cui_ctx *ui, cui_id id) {
+    const cui_draw_data *dd = cui_get_draw_data(ui);
+    int w = dd->width_px, h = dd->height_px;
+    unsigned char *px = malloc((size_t)w * h * 4);
+    cui_sw_render(g_sw, dd, px, w, h, w * 4, CUI_SW_RGBA);
+    cui_rect r = rect_of(ui, id);
+    int x = (int)(r.x + 4), y = (int)(r.y + r.h / 2), bx = 600, by = 500;
+    const unsigned char *a = px + ((size_t)y * w + x) * 4, *b = px + ((size_t)by * w + bx) * 4;
+    bool lit = abs(a[0] - b[0]) + abs(a[1] - b[1]) + abs(a[2] - b[2]) > 6;
+    free(px);
+    return lit;
+}
+static void test_nav_highlight(void) {
+    printf("nav items: highlight follows the selection, and leaves with it\n");
+    cui_ctx *ui = new_ctx();
+    cui_input_mouse_move(ui, 790, 590);   /* away from the items: no hover */
+    nav_ctx n = { .sel = 0 };
+    run(ui, build_nav, &n, 4);
+    CHECK(nav_lit(ui, n.item[0]) && !nav_lit(ui, n.item[1]) && !nav_lit(ui, n.item[2]));
+    n.sel = -1;                            /* a page that is not in the sidebar */
+    run(ui, build_nav, &n, 4);
+    CHECK(!nav_lit(ui, n.item[0]) && !nav_lit(ui, n.item[1]) && !nav_lit(ui, n.item[2]));
+    n.sel = 2;                             /* back in the sidebar, on another item */
+    run(ui, build_nav, &n, 4);
+    CHECK(!nav_lit(ui, n.item[0]) && !nav_lit(ui, n.item[1]) && nav_lit(ui, n.item[2]));
+    n.sel = 1;                             /* moving between items still works */
+    run(ui, build_nav, &n, 4);
+    CHECK(!nav_lit(ui, n.item[0]) && nav_lit(ui, n.item[1]) && !nav_lit(ui, n.item[2]));
+    cui_destroy(ui);
+    /* with motion: clicking an item above the selected one glides the highlight over the
+     * item between. The click frame has none selected, which must not reset the glide. */
+    ui = new_ctx();
+    cui_set_reduced_motion(ui, false);
+    nav_ctx c = { .sel = 2, .click = true };
+    run(ui, build_nav, &c, 60);
+    cui_rect r0 = rect_of(ui, c.item[0]);
+    click_at(ui, build_nav, &c, r0.x + r0.w / 2, r0.y + r0.h / 2);
+    cui_input_mouse_move(ui, 790, 590);
+    bool passed_middle = false;
+    for (int f = 0; f < 30 && !passed_middle; f++) { run(ui, build_nav, &c, 1); passed_middle = nav_lit(ui, c.item[1]); }
+    CHECK(c.sel == 0);
+    CHECK(passed_middle);
+    run(ui, build_nav, &c, 60);
+    CHECK(nav_lit(ui, c.item[0]) && !nav_lit(ui, c.item[1]) && !nav_lit(ui, c.item[2]));
+    cui_destroy(ui);
+}
+
 /* A click focuses without a ring; the next key shows the ring and acts on
  * that control, unless an open popup above it owns the keyboard. */
 typedef struct { int clicks, sel; cui_id button, select; } ck_ctx;
@@ -434,6 +564,51 @@ static void type(cui_ctx *ui, build_fn fn, void *u, const char *s) {
     cui_input_key(ui, CUI_KEY_NONE, false, 0);   /* typing happens without modifiers */
     cui_input_text(ui, s);
     run(ui, fn, u, 1);
+}
+
+typedef struct { char text[16]; bool disabled, next_clicked; } password_reveal_ctx;
+
+static void build_password_reveal(cui_ctx *ui, void *user) {
+    password_reveal_ctx *p = user;
+    cui_input(ui, "Password", p->text, sizeof p->text, .password = true, .disabled = p->disabled);
+    p->next_clicked = cui_button(ui, "Next");
+}
+
+/** Sample the text pixels separately from the reveal button and its tooltip. */
+static uint64_t password_text_pixels(cui_ctx *ui) {
+    enum { width = 320, height = 100, stride = width * 4 };
+    unsigned char pixels[height * stride];
+    cui_sw_render(g_sw, cui_get_draw_data(ui), pixels, width, height, stride, CUI_SW_RGBA);
+    uint64_t hash = 0;
+    for (int y = 4; y < 32; y++) {
+        for (int x = 12; x < 120; x++) {
+            for (int channel = 0; channel < 3; channel++) hash = hash * 31 + pixels[y * stride + 4 * x + channel];
+        }
+    }
+    return hash;
+}
+
+/** A disabled eye ignores clicks and leaves the next button first in tab order. */
+static void test_disabled_password_reveal(void) {
+    printf("password field: a disabled reveal button cannot unmask text\n");
+    for (int disabled = 0; disabled < 2; disabled++) {
+        cui_ctx *ui = new_ctx();
+        cui_set_viewport(ui, 320, 100, 1);
+        password_reveal_ctx p = { "sample", disabled != 0, false };
+        run(ui, build_password_reveal, &p, 2);
+        uint64_t masked = password_text_pixels(ui);
+        click_at(ui, build_password_reveal, &p, 301, 16);
+        run(ui, build_password_reveal, &p, 1);
+        CHECK((password_text_pixels(ui) == masked) == p.disabled);
+        cui_destroy(ui);
+    }
+    cui_ctx *ui = new_ctx();
+    password_reveal_ctx p = { "sample", true, false };
+    run(ui, build_password_reveal, &p, 1);
+    key(ui, build_password_reveal, &p, CUI_KEY_TAB, 0);
+    key(ui, build_password_reveal, &p, CUI_KEY_ENTER, 0);
+    CHECK(p.next_clicked);
+    cui_destroy(ui);
 }
 
 static void test_text_input(void) {
@@ -583,6 +758,40 @@ static void build_actions(cui_ctx *ui, void *u) {
     }
 }
 
+static void build_toggle_group_arrows(cui_ctx *ui, void *user) {
+    const char *labels[] = { "First", "Second", "Third", "Fourth" };
+    cui_toggle_group(ui, "formats", labels, 4, user);
+}
+
+/** Move one slot per arrow and preserve focus given by a later mouse press. */
+static void test_toggle_group_arrows(void) {
+    printf("toggle group: one step per arrow press\n");
+    cui_ctx *ui = new_ctx();
+    bool values[4] = { false };
+    run(ui, build_toggle_group_arrows, values, 1);
+    key(ui, build_toggle_group_arrows, values, CUI_KEY_TAB, 0);
+    key(ui, build_toggle_group_arrows, values, CUI_KEY_RIGHT, 0);
+    key(ui, build_toggle_group_arrows, values, CUI_KEY_ENTER, 0);
+    CHECK(!values[0] && values[1] && !values[2] && !values[3]);
+    key(ui, build_toggle_group_arrows, values, CUI_KEY_LEFT, 0);
+    key(ui, build_toggle_group_arrows, values, CUI_KEY_SPACE, 0);
+    CHECK(values[0] && values[1] && !values[2] && !values[3]);
+
+    memset(values, 0, sizeof values);
+    cui_rect group = cui_last_rect(ui);
+    cui_input_mouse_move(ui, group.x + group.w - 12, group.y + group.h / 2);
+    cui_input_key(ui, CUI_KEY_RIGHT, true, 0);
+    cui_input_key(ui, CUI_KEY_RIGHT, false, 0);
+    cui_input_mouse_button(ui, CUI_MOUSE_LEFT, true);
+    run(ui, build_toggle_group_arrows, values, 1);
+    cui_input_mouse_button(ui, CUI_MOUSE_LEFT, false);
+    run(ui, build_toggle_group_arrows, values, 1);
+    CHECK(values[3]);
+    key(ui, build_toggle_group_arrows, values, CUI_KEY_ENTER, 0);
+    CHECK(!values[0] && !values[1] && !values[2] && !values[3]);
+    cui_destroy(ui);
+}
+
 static void test_more_actions(void) {
     printf("actions: split button, toggle group, confirm, status, reactions, speed dial\n");
     cui_ctx *ui = new_ctx();
@@ -593,6 +802,27 @@ static void test_more_actions(void) {
     a.re[1] = (cui_reaction){ CUI_ICON_STAR, 1, true };
     a.al[0] = true;
     run(ui, build_actions, &a, 3);
+    /* With visible keyboard focus on the chevron, Enter belongs to the open menu. */
+    key(ui, build_actions, &a, CUI_KEY_TAB, 0);
+    key(ui, build_actions, &a, CUI_KEY_ENTER, 0);
+    CHECK(a.split == 0);
+    a.split = -1;
+    key(ui, build_actions, &a, CUI_KEY_TAB, 0);
+    key(ui, build_actions, &a, CUI_KEY_DOWN, 0);
+    key(ui, build_actions, &a, CUI_KEY_DOWN, 0);
+    key(ui, build_actions, &a, CUI_KEY_DOWN, 0);
+    CHECK(a.split == -1);
+    key(ui, build_actions, &a, CUI_KEY_ENTER, 0);
+    CHECK(a.split == 2);
+    a.split = -1;
+    key(ui, build_actions, &a, CUI_KEY_ENTER, 0);
+    key(ui, build_actions, &a, CUI_KEY_DOWN, 0);
+    key(ui, build_actions, &a, CUI_KEY_ENTER, 0);
+    CHECK(a.split == 1);
+    a.split = -1;
+    key(ui, build_actions, &a, CUI_KEY_SPACE, 0);
+    key(ui, build_actions, &a, CUI_KEY_ESCAPE, 0);
+    CHECK(a.split == -1);
     /* split: main part, then the menu by keyboard */
     cui_rect sr = rect_of(ui, a.split_id);
     click_at(ui, build_actions, &a, sr.x + 20, sr.y + sr.h / 2);
@@ -667,6 +897,217 @@ static void build_more_inputs(cui_ctx *ui, void *u) {
         cui_input(ui, "other", a->other, sizeof a->other, .width = CUI_PX(200));
         a->other_id = cui_last_id(ui);
     }
+}
+
+typedef struct { float lo, hi, other; } range_keyboard_ctx;
+
+static void build_range_keyboard(cui_ctx *ui, void *user) {
+    range_keyboard_ctx *r = user;
+    cui_range_slider(ui, "Range", &r->lo, &r->hi, 0, 100);
+    cui_slider(ui, "Other", &r->other, 0, 100);
+}
+
+/** Exercise both thumbs and show which one is selected when they overlap. */
+static void test_range_slider_keyboard(void) {
+    printf("range slider: keyboard adjustment of both thumbs\n");
+    cui_ctx *ui = new_ctx();
+    enum { width = 320, height = 150, stride = width * 4 };
+    unsigned char lower[height * stride], upper[height * stride];
+    cui_set_viewport(ui, width, height, 1);
+    cui_input_mouse_leave(ui);
+    range_keyboard_ctx r = { 20, 75, 40 };
+    run(ui, build_range_keyboard, &r, 1);
+    int unfocused_vertices = cui_get_draw_data(ui)->vertex_count;
+    key(ui, build_range_keyboard, &r, CUI_KEY_TAB, 0);
+    CHECK(cui_get_draw_data(ui)->vertex_count > unfocused_vertices);
+    key(ui, build_range_keyboard, &r, CUI_KEY_RIGHT, 0);
+    CHECK_NEAR(r.lo, 21, 0.01);
+    CHECK_NEAR(r.hi, 75, 0.01);
+    key(ui, build_range_keyboard, &r, CUI_KEY_END, 0);
+    CHECK_NEAR(r.lo, 75, 0.01);
+    cui_sw_render(g_sw, cui_get_draw_data(ui), lower, width, height, stride, CUI_SW_RGBA);
+    key(ui, build_range_keyboard, &r, CUI_KEY_SPACE, 0);
+    cui_sw_render(g_sw, cui_get_draw_data(ui), upper, width, height, stride, CUI_SW_RGBA);
+    CHECK(memcmp(lower, upper, sizeof lower) != 0);
+    key(ui, build_range_keyboard, &r, CUI_KEY_RIGHT, CUI_MOD_SHIFT);
+    CHECK_NEAR(r.lo, 75, 0.01);
+    CHECK_NEAR(r.hi, 85, 0.01);
+    key(ui, build_range_keyboard, &r, CUI_KEY_TAB, 0);
+    key(ui, build_range_keyboard, &r, CUI_KEY_RIGHT, 0);
+    CHECK_NEAR(r.other, 41, 0.01);
+    CHECK_NEAR(r.hi, 85, 0.01);
+    cui_destroy(ui);
+}
+
+typedef struct { int ancestor, page; } navigation_focus_ctx;
+
+/** Leave space around both rows for the focus rings. */
+static void build_navigation_focus(cui_ctx *ui, void *user) {
+    navigation_focus_ctx *n = user;
+    const char *path[] = { "Home", "Projects", "Settings" };
+    cui_column(ui, .pad = 12, .gap = 12) {
+        n->ancestor = cui_breadcrumb(ui, path, 3);
+        cui_pagination(ui, "pages", &n->page, 3);
+    }
+}
+
+/** Compare only the pixels above the middle of the expected focus target. */
+static bool focus_strip_changed(const unsigned char *a, const unsigned char *b, int stride, int height, cui_vec2 top) {
+    int x = (int)top.x - 4;
+    int y0 = (int)top.y - 4;
+    if (x < 0 || x + 8 > stride / 4 || y0 < 0 || y0 + 7 > height) return false;
+    for (int y = y0; y < y0 + 7; y++) {
+        if (memcmp(a + y * stride + x * 4, b + y * stride + x * 4, 8 * 4) != 0) return true;
+    }
+    return false;
+}
+
+/** The ring appears over each keyboard target and clears when focus moves. */
+static void test_navigation_focus_visible(void) {
+    printf("breadcrumb and pagination: visible keyboard focus\n");
+    enum { width = 400, height = 120, stride = width * 4 };
+    unsigned char initial[height * stride], focused[height * stride];
+    navigation_focus_ctx n = { -1, 0 };
+    cui_ctx *ui = new_ctx();
+    cui_set_viewport(ui, width, height, 1);
+    cui_input_mouse_leave(ui);
+    run(ui, build_navigation_focus, &n, 1);
+    cui_rect home = cui_get_rect(ui, cui_make_id(ui, "Home"));
+    cui_rect next = cui_last_rect(ui);
+    cui_vec2 home_top = { home.x + home.w / 2, home.y };
+    /* Page two sits in the middle of the three numbered buttons and two arrows. */
+    cui_vec2 page_top = { (home.x + next.x + next.w) / 2, next.y };
+    cui_sw_render(g_sw, cui_get_draw_data(ui), initial, width, height, stride, CUI_SW_RGBA);
+    key(ui, build_navigation_focus, &n, CUI_KEY_TAB, 0);
+    cui_sw_render(g_sw, cui_get_draw_data(ui), focused, width, height, stride, CUI_SW_RGBA);
+    CHECK(focus_strip_changed(initial, focused, stride, height, home_top));
+    CHECK(!focus_strip_changed(initial, focused, stride, height, page_top));
+    key(ui, build_navigation_focus, &n, CUI_KEY_ENTER, 0);
+    CHECK(n.ancestor == 0);
+    for (int i = 0; i < 3; i++) key(ui, build_navigation_focus, &n, CUI_KEY_TAB, 0);
+    cui_sw_render(g_sw, cui_get_draw_data(ui), focused, width, height, stride, CUI_SW_RGBA);
+    CHECK(!focus_strip_changed(initial, focused, stride, height, home_top));
+    CHECK(focus_strip_changed(initial, focused, stride, height, page_top));
+    key(ui, build_navigation_focus, &n, CUI_KEY_ENTER, 0);
+    CHECK(n.page == 1);
+    cui_destroy(ui);
+}
+
+typedef struct { int page; cui_size width; float sibling_width; } unnamed_pager_ctx;
+
+/** Put the pager in a padded box with an optional sibling competing for space. */
+static void build_unnamed_pager(cui_ctx *ui, void *user) {
+    unnamed_pager_ctx *p = user;
+    cui_row(ui, .width = CUI_FILL) {
+        if (p->sibling_width > 0) {
+            cui_box(ui, .width = CUI_PX(p->sibling_width)) cui_text(ui, "Sibling");
+        }
+        cui_box(ui, .width = p->width, .pad = 24) {
+            cui_pagination(ui, "pages", &p->page, 12);
+        }
+    }
+}
+
+/** A fixed box constrains the pager and a content-sized box can grow again. */
+static void test_pagination_unnamed_width(void) {
+    printf("pagination: stays inside an unnamed padded parent\n");
+    cui_ctx *ui = new_ctx();
+    cui_set_viewport(ui, 360, 160, 1);
+    unnamed_pager_ctx p = { 5, CUI_PX(328), 0 };
+    run(ui, build_unnamed_pager, &p, 3);
+    cui_rect next = cui_last_rect(ui);
+    CHECK(next.w > 0 && next.x + next.w <= 304.5f);
+    cui_destroy(ui);
+
+    ui = new_ctx();
+    p.width = CUI_FIT;
+    cui_set_viewport(ui, 300, 160, 1);
+    run(ui, build_unnamed_pager, &p, 3);
+    next = cui_last_rect(ui);
+    float compact_edge = next.x + next.w;
+    CHECK(compact_edge <= 276.5f);
+    cui_set_viewport(ui, 650, 160, 1);
+    run(ui, build_unnamed_pager, &p, 3);
+    next = cui_last_rect(ui);
+    CHECK(next.x + next.w > 304.5f);
+    p.sibling_width = 350;
+    run(ui, build_unnamed_pager, &p, 3);
+    next = cui_last_rect(ui);
+    CHECK_NEAR(next.x + next.w, p.sibling_width + compact_edge, 0.5);
+    p.sibling_width = 0;
+    cui_set_viewport(ui, 300, 160, 1);
+    run(ui, build_unnamed_pager, &p, 3);
+    next = cui_last_rect(ui);
+    CHECK_NEAR(next.x + next.w, compact_edge, 0.5);
+    cui_destroy(ui);
+}
+
+/** Render the narrow stepper with and without an unrelated, wider sibling. */
+static void render_stepper_pair(bool sibling, unsigned char *pixels) {
+    enum { width = 950, height = 80 };
+    const char *steps[] = { "Account", "Workspace", "Invite team", "Done" };
+    cui_ctx *ui = new_ctx();
+    cui_set_viewport(ui, width, height, 1);
+    for (int frame = 0; frame < 3; frame++) {
+        cui_begin_frame(ui, 1.0f / 60.0f);
+        cui_row(ui, .gap = 16, .pad = 8) {
+            cui_box(ui, .width = CUI_PX(280)) cui_stepper(ui, steps, 4, 1);
+            if (sibling) {
+                cui_box(ui, .width = CUI_PX(620)) cui_stepper(ui, steps, 4, 1);
+            }
+        }
+        cui_end_frame(ui);
+    }
+    cui_sw_render(g_sw, cui_get_draw_data(ui), pixels, width, height, width * 4, CUI_SW_RGBA);
+    cui_destroy(ui);
+}
+
+/** The wide stepper must not change the narrow one's rendered captions. */
+static void test_stepper_width_isolation(void) {
+    printf("stepper: duplicate captions do not share measured width\n");
+    enum { height = 80, stride = 950 * 4, left_column = 288 * 4 };
+    unsigned char alone[height * stride], pair[height * stride];
+    render_stepper_pair(false, alone);
+    render_stepper_pair(true, pair);
+    bool same = true;
+    for (int y = 0; y < height; y++) {
+        if (memcmp(alone + y * stride, pair + y * stride, left_column) != 0) same = false;
+    }
+    CHECK(same);
+}
+
+typedef struct { float lo, hi; bool chosen; } range_menu_ctx;
+
+/** Attach the menu to the track so the range can retain focus underneath it. */
+static void build_range_menu(cui_ctx *ui, void *user) {
+    range_menu_ctx *r = user;
+    cui_range_slider(ui, "Range", &r->lo, &r->hi, 0, 100);
+    cui_context_menu(ui, "range-menu") {
+        if (cui_menu_item(ui, "First")) r->chosen = true;
+        cui_menu_item(ui, "Second");
+    }
+}
+
+/** A context menu uses the arrow keys even when its anchor keeps focus. */
+static void test_range_slider_context_menu(void) {
+    printf("range slider: a context menu owns its arrow keys\n");
+    cui_ctx *ui = new_ctx();
+    range_menu_ctx r = { 20, 75, false };
+    run(ui, build_range_menu, &r, 1);
+    key(ui, build_range_menu, &r, CUI_KEY_TAB, 0);
+    cui_vec2 track = center(cui_last_rect(ui));
+    cui_input_mouse_move(ui, track.x, track.y);
+    cui_input_mouse_button(ui, CUI_MOUSE_RIGHT, true);
+    run(ui, build_range_menu, &r, 1);
+    cui_input_mouse_button(ui, CUI_MOUSE_RIGHT, false);
+    cui_input_mouse_leave(ui);
+    run(ui, build_range_menu, &r, 1);
+    key(ui, build_range_menu, &r, CUI_KEY_DOWN, 0);
+    key(ui, build_range_menu, &r, CUI_KEY_ENTER, 0);
+    CHECK(r.chosen);
+    CHECK_NEAR(r.lo, 20, 0.01);
+    CHECK_NEAR(r.hi, 75, 0.01);
+    cui_destroy(ui);
 }
 
 static void test_more_inputs(void) {
@@ -963,6 +1404,27 @@ static void build_disclosure(cui_ctx *ui, void *u) {
         a->scroll_id = cui_make_id(ui, "doc");
         cui_column(ui, .width = CUI_PX(160)) { a->active = cui_toc(ui, "doc", toc, 3); }
     }
+}
+
+/** Build the question in the same frame as its keyboard-activated trigger. */
+static void build_confirm_keyboard(cui_ctx *ui, void *user) {
+    bool *confirmed = user;
+    if (cui_button(ui, "Delete item")) cui_popover_open(ui, "delete");
+    *confirmed = cui_confirm_popover(ui, "delete", .title = "Delete this item?", .danger = true);
+}
+
+/** The key that opens the question must not answer it in the same frame. */
+static void test_confirm_popover_keyboard(void) {
+    printf("confirmation popover: a separate Enter confirms\n");
+    cui_ctx *ui = new_ctx();
+    bool confirmed = false;
+    run(ui, build_confirm_keyboard, &confirmed, 1);
+    key(ui, build_confirm_keyboard, &confirmed, CUI_KEY_TAB, 0);
+    key(ui, build_confirm_keyboard, &confirmed, CUI_KEY_ENTER, 0);
+    CHECK(cui_popover_is_open(ui, "delete") && !confirmed);
+    key(ui, build_confirm_keyboard, &confirmed, CUI_KEY_ENTER, 0);
+    CHECK(confirmed && !cui_popover_is_open(ui, "delete"));
+    cui_destroy(ui);
 }
 
 static void test_disclosure(void) {
@@ -1538,7 +2000,27 @@ static void test_tree_table(void) {
     key(ui, build_pbar, &p, CUI_KEY_DOWN, 0);
     key(ui, build_pbar, &p, CUI_KEY_ENTER, 0);
     CHECK(p.clicked >= 0 && p.clicked < 7);   /* a collapsed segment, chosen in the menu */
+    /* by keyboard alone: Tab past the first segment to "...", open it with Enter or Space,
+     * and Enter on the highlighted item picks it instead of closing the menu */
+    int first_hidden = p.clicked;
     cui_destroy(ui);
+    cui_key openers[] = { CUI_KEY_ENTER, CUI_KEY_SPACE };
+    for (int o = 0; o < 2; o++) {
+        ui = new_ctx();
+        cui_set_viewport(ui, 320, 400, 1);
+        memset(&p, 0, sizeof p);
+        p.segs = segs; p.count = 8; p.clicked = -1; p.menu_seg = -1;
+        run(ui, build_pbar, &p, 4);
+        key(ui, build_pbar, &p, CUI_KEY_TAB, 0);
+        key(ui, build_pbar, &p, CUI_KEY_TAB, 0);
+        key(ui, build_pbar, &p, openers[o], 0);
+        run(ui, build_pbar, &p, 20);
+        CHECK(p.clicked == -1);
+        key(ui, build_pbar, &p, CUI_KEY_DOWN, 0);
+        key(ui, build_pbar, &p, CUI_KEY_ENTER, 0);
+        CHECK(p.clicked == first_hidden);
+        cui_destroy(ui);
+    }
 }
 
 static void test_text_capacity(void) {
@@ -1592,6 +2074,29 @@ static void test_dialog(void) {
     run(ui, build_dialog, &d, 3);
     click_at(ui, build_dialog, &d, 400, 300);
     CHECK(d.open == true);
+    cui_destroy(ui);
+}
+
+typedef struct { bool open; char text[32]; } dialog_edit_ctx;
+
+static void build_dialog_edit(cui_ctx *ui, void *user) {
+    dialog_edit_ctx *d = user;
+    cui_dialog(ui, "Edit profile", &d->open) {
+        cui_input(ui, "Name", d->text, sizeof d->text, .autofocus = true);
+    }
+}
+
+/** Consecutive Escapes first leave the field, then dismiss its dialog. */
+static void test_dialog_escape_after_edit(void) {
+    printf("dialog: Escape after an active editor\n");
+    cui_ctx *ui = new_ctx();
+    dialog_edit_ctx d = { true, "Example" };
+    run(ui, build_dialog_edit, &d, 1);
+    CHECK(cui_wants_keyboard(ui));
+    key(ui, build_dialog_edit, &d, CUI_KEY_ESCAPE, 0);
+    CHECK(d.open && !cui_wants_keyboard(ui));
+    key(ui, build_dialog_edit, &d, CUI_KEY_ESCAPE, 0);
+    CHECK(!d.open);
     cui_destroy(ui);
 }
 
@@ -1672,6 +2177,56 @@ static void build_extras(cui_ctx *ui, void *u) {
         if (cui_hold_button(ui, "Hold", .duration = 0.5f)) x->held++;
         x->hold_id = cui_make_id(ui, "Hold");
     }
+}
+
+static void advance_toast(cui_ctx *ui, float elapsed) {
+    cui_begin_frame(ui, elapsed);
+    cui_end_frame(ui);
+}
+
+/** Timed toasts expire after an idle wake and stop accepting input on exit. */
+static void test_toast_deadline(void) {
+    printf("toast: idle deadline and expired action\n");
+    cui_ctx *ui = new_ctx();
+    cui_input_mouse_leave(ui);
+    cui_begin_frame(ui, 0);
+    cui_toast(ui, "Idle notice", .duration = 1.2f);
+    cui_end_frame(ui);
+    float wake = cui_next_wakeup(ui);
+    CHECK(wake >= 1.2f && wake < 1.3f);
+    advance_toast(ui, wake);
+    CHECK(cui_next_wakeup(ui) < 0);
+    cui_destroy(ui);
+
+    ui = new_ctx();
+    cui_begin_frame(ui, 0);
+    cui_toast(ui, "Pause on hover", .duration = 1.2f);
+    cui_end_frame(ui);
+    cui_input_mouse_move(ui, 700, 550);
+    advance_toast(ui, 0.1f);
+    advance_toast(ui, 2.0f);
+    CHECK(cui_next_wakeup(ui) < 0);
+    cui_input_mouse_leave(ui);
+    advance_toast(ui, 0);
+    wake = cui_next_wakeup(ui);
+    CHECK(wake > 1.0f && wake < 1.3f);
+    cui_destroy(ui);
+
+    ui = new_ctx();
+    cui_input_mouse_leave(ui);
+    cui_set_reduced_motion(ui, false);
+    cui_begin_frame(ui, 0);
+    int handle = cui_toast(ui, "Message archived", .duration = 1.0f, .action = "Undo");
+    cui_end_frame(ui);
+    cui_input_key(ui, CUI_KEY_TAB, true, 0);
+    cui_input_key(ui, CUI_KEY_TAB, false, 0);
+    advance_toast(ui, 0.01f);
+    for (int i = 0; i < 49; i++) advance_toast(ui, 0.02f);
+    cui_input_key(ui, CUI_KEY_ENTER, true, 0);
+    cui_input_key(ui, CUI_KEY_ENTER, false, 0);
+    advance_toast(ui, 0.02f);
+    CHECK(!cui_toast_action_clicked(ui, handle));
+    cui_destroy(ui);
 }
 
 static void test_extras(void) {
@@ -2518,6 +3073,171 @@ static void test_theme(void) {
     cui_destroy(ui);
 }
 
+/* the series palette: every color readable on the page, at one lightness, under every accent */
+static double series_lin(int c) { double v = c / 255.0; return v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4); }
+static double series_lum(cui_color c) { return 0.2126 * series_lin(c.r) + 0.7152 * series_lin(c.g) + 0.0722 * series_lin(c.b); }
+static double series_oklab_l(cui_color c) {
+    double r = series_lin(c.r), g = series_lin(c.g), b = series_lin(c.b);
+    double l = cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+    double m = cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+    double s = cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+    return 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s;
+}
+
+static void test_series_palette(void) {
+    printf("theme: the series palette is even and readable in both modes\n");
+    for (int dark = 0; dark < 2; dark++)
+        for (int a = 0; a < CUI_ACCENT_COUNT; a++) {
+            cui_ctx *ui = cui_create(&(cui_ctx_desc){ .renderer = cui_sw_iface(g_sw), .theme = dark ? CUI_THEME_DARK : CUI_THEME_LIGHT, .accent = (cui_accent)a });
+            cui_color bg = cui_token_color(ui, CUI_TOKEN_SURFACE);
+            double lo = 1, hi = 0, worst = 99;
+            for (int k = 0; k < 6; k++) {
+                cui_color c = cui_token_color(ui, (cui_token)(CUI_TOKEN_SERIES_1 + k));
+                double L = series_oklab_l(c), y1 = series_lum(c), y2 = series_lum(bg);
+                double cr = (fmax(y1, y2) + 0.05) / (fmin(y1, y2) + 0.05);
+                lo = fmin(lo, L); hi = fmax(hi, L); worst = fmin(worst, cr);
+            }
+            CHECK(hi - lo < 0.02);   /* one lightness: no series louder than another */
+            CHECK(worst >= 3.0);     /* graphics contrast on a card */
+            cui_destroy(ui);
+        }
+}
+
+/* radial gauge styles: AUTO picks segments with bands and the arc without; each style is
+ * told apart by its pixels: segments break up along the arc, the arc is one stroke with a
+ * gap at the bottom, the ring closes there */
+typedef struct { cui_gauge_style style; bool bands; } gauge_case;
+static void build_gauge_case(cui_ctx *ui, void *u) {
+    const gauge_case *g = u;
+    static const cui_gauge_band b[] = { { 50, CUI_TONE_SUCCESS, "Ok" }, { 100, CUI_TONE_DANGER, "Hot" } };
+    cui_radial_gauge(ui, "g", 80, 0, 100, .size = 200, .style = g->style, .bands = g->bands ? b : NULL, .band_count = g->bands ? 2 : 0);
+}
+static bool gauge_ink(const unsigned char *px, int w, float x, float y, const unsigned char *bg) {
+    const unsigned char *q = px + ((int)y * w + (int)x) * 4;
+    return abs(q[0] - bg[0]) + abs(q[1] - bg[1]) + abs(q[2] - bg[2]) > 12;
+}
+/* breaks: ink and gap changes along the lit part of the arc; *bottom: ink under the middle */
+static void gauge_probe(gauge_case g, int *breaks, bool *bottom) {
+    cui_ctx *ui = cui_create(&(cui_ctx_desc){ .renderer = cui_sw_iface(g_sw) });
+    cui_set_viewport(ui, 240, 280, 1);
+    run(ui, build_gauge_case, &g, 90);
+    cui_rect r = cui_get_rect(ui, cui_make_id(ui, "g"));
+    const cui_draw_data *dd = cui_get_draw_data(ui);
+    unsigned char *px = calloc((size_t)dd->width_px * dd->height_px, 4);
+    cui_sw_render(g_sw, dd, px, dd->width_px, dd->height_px, dd->width_px * 4, CUI_SW_RGBA);
+    unsigned char bg[3] = { px[(dd->height_px - 2) * dd->width_px * 4], px[(dd->height_px - 2) * dd->width_px * 4 + 1], px[(dd->height_px - 2) * dd->width_px * 4 + 2] };
+    float R = 96, cx = r.x + r.w * 0.5f, cy = r.y + 4 + R, a0 = 3.14159265f * 0.75f, sweep = 3.14159265f * 1.5f;
+    int changes = 0;
+    bool prev = false;
+    for (int i = 0; i <= 400; i++) {
+        float a = a0 + sweep * (0.05f + 0.7f * (float)i / 400.0f);
+        bool ink = gauge_ink(px, dd->width_px, cx + cosf(a) * 84, cy + sinf(a) * 84, bg);
+        if (i > 0 && ink != prev) changes++;
+        prev = ink;
+    }
+    *breaks = changes;
+    *bottom = gauge_ink(px, dd->width_px, cx, cy + 90, bg);
+    free(px);
+    cui_destroy(ui);
+}
+
+static void test_radial_gauge_styles(void) {
+    printf("radial gauge: the style follows the options\n");
+    int breaks; bool bottom;
+    gauge_probe((gauge_case){ CUI_GAUGE_AUTO, false }, &breaks, &bottom);
+    CHECK(breaks == 0 && !bottom);              /* no bands: the arc */
+    gauge_probe((gauge_case){ CUI_GAUGE_AUTO, true }, &breaks, &bottom);
+    CHECK(breaks >= 10 && !bottom);             /* bands: the segments */
+    gauge_probe((gauge_case){ CUI_GAUGE_SEGMENTS, false }, &breaks, &bottom);
+    CHECK(breaks >= 10);
+    gauge_probe((gauge_case){ CUI_GAUGE_ARC, true }, &breaks, &bottom);
+    CHECK(breaks == 0 && !bottom);              /* asked for the arc, bands only color it */
+    gauge_probe((gauge_case){ CUI_GAUGE_RING, false }, &breaks, &bottom);
+    CHECK(breaks == 0 && bottom);               /* the ring closes under the value */
+}
+
+/* treemap selection: a click selects a tile, a second click on it clears, NULL keeps none */
+static int g_tm_pick = -1;
+static void build_tm_select(cui_ctx *ui, void *u) {
+    (void)u;
+    static const cui_viz_item items[] = { { "Big", 3, { 0 } }, { "Small", 1, { 0 } } };
+    cui_treemap(ui, "pick", items, 2, .width = CUI_PX(400), .height = 200, .selected = &g_tm_pick);
+}
+static void test_treemap_select(void) {
+    printf("treemap: a click selects a tile and a second click clears it\n");
+    cui_ctx *ui = cui_create(&(cui_ctx_desc){ .renderer = cui_sw_iface(g_sw) });
+    cui_set_viewport(ui, 420, 220, 1);
+    run(ui, build_tm_select, NULL, 3);
+    cui_rect r = cui_get_rect(ui, cui_make_id(ui, "pick"));
+    click_at(ui, build_tm_select, NULL, r.x + 60, r.y + 100);    /* the big tile fills the left three quarters */
+    CHECK(g_tm_pick == 0);
+    click_at(ui, build_tm_select, NULL, r.x + 360, r.y + 100);
+    CHECK(g_tm_pick == 1);
+    click_at(ui, build_tm_select, NULL, r.x + 360, r.y + 100);
+    CHECK(g_tm_pick == -1);
+    cui_destroy(ui);
+}
+
+/* sankey node colors: a node takes the caller's color; one left unset falls back */
+static void build_sankey_colors(cui_ctx *ui, void *u) {
+    (void)u;
+    static const char *nodes[] = { "A", "B" };
+    static const cui_sankey_link links[] = { { 0, 1, 10 } };
+    const cui_color colors[] = { CUI_RGB(0xff0000), { 0 } };
+    cui_sankey(ui, "sk", nodes, 2, links, 1, .width = CUI_PX(300), .height = 120, .node_colors = colors);
+}
+static void test_sankey_node_colors(void) {
+    printf("sankey: nodes take the caller's colors\n");
+    cui_ctx *ui = cui_create(&(cui_ctx_desc){ .renderer = cui_sw_iface(g_sw) });
+    cui_set_viewport(ui, 320, 140, 1);
+    run(ui, build_sankey_colors, NULL, 60);
+    cui_rect r = cui_get_rect(ui, cui_make_id(ui, "sk"));
+    const cui_draw_data *dd = cui_get_draw_data(ui);
+    unsigned char *px = calloc((size_t)dd->width_px * dd->height_px, 4);
+    cui_sw_render(g_sw, dd, px, dd->width_px, dd->height_px, dd->width_px * 4, CUI_SW_RGBA);
+    const unsigned char *a = px + ((int)(r.y + r.h * 0.5f) * dd->width_px + (int)(r.x + 3)) * 4;
+    CHECK(a[0] > 240 && a[1] < 20 && a[2] < 20);                  /* the source node in red */
+    CHECK(!(a[0] == a[1] && a[1] == a[2]));
+    free(px);
+    cui_destroy(ui);
+}
+
+/* gantt state: a bar takes its state's color; AUTO reads it from progress and today */
+static cui_gantt_task g_gantt_case;
+static void build_gantt_case(cui_ctx *ui, void *u) {
+    (void)u;
+    cui_date org = { 2026, 11, 2 };
+    cui_gantt(ui, "gs", &g_gantt_case, 1, org, 10, .day_width = 30, .today = 2, .read_only = true);
+}
+static void gantt_bar_px(cui_gantt_task t, unsigned char out[3]) {
+    g_gantt_case = t;
+    cui_ctx *ui = cui_create(&(cui_ctx_desc){ .renderer = cui_sw_iface(g_sw) });
+    cui_set_viewport(ui, 620, 160, 1);
+    run(ui, build_gantt_case, NULL, 10);
+    cui_rect b = cui_get_rect(ui, cui_make_id(ui, "gs") ^ 0xB0D7u);
+    const cui_draw_data *dd = cui_get_draw_data(ui);
+    unsigned char *px = calloc((size_t)dd->width_px * dd->height_px, 4);
+    cui_sw_render(g_sw, dd, px, dd->width_px, dd->height_px, dd->width_px * 4, CUI_SW_RGBA);
+    const unsigned char *q = px + ((int)(b.y + 20) * dd->width_px + (int)(b.x + t.start * 30 + (t.end - t.start) * 30 * 0.8f)) * 4;
+    memcpy(out, q, 3);
+    free(px);
+    cui_destroy(ui);
+}
+static void test_gantt_state(void) {
+    printf("gantt: bars take the color of their state\n");
+    unsigned char done[3], planned[3], auto_done[3], auto_planned[3], auto_active[3];
+    gantt_bar_px((cui_gantt_task){ "", NULL, 4, 8, 0, 0, -1, false, CUI_GANTT_DONE }, done);
+    gantt_bar_px((cui_gantt_task){ "", NULL, 4, 8, 0, 0, -1, false, CUI_GANTT_PLANNED }, planned);
+    gantt_bar_px((cui_gantt_task){ "", NULL, 4, 8, 1, 0, -1, false, CUI_GANTT_AUTO }, auto_done);
+    gantt_bar_px((cui_gantt_task){ "", NULL, 4, 8, 0, 0, -1, false, CUI_GANTT_AUTO }, auto_planned);   /* starts after today */
+    gantt_bar_px((cui_gantt_task){ "", NULL, 1, 8, 0, 0, -1, false, CUI_GANTT_AUTO }, auto_active);    /* started, nothing done */
+    CHECK(done[1] > done[0] + 20 && done[1] > done[2]);                     /* a filled green bar */
+    CHECK(abs(planned[0] - planned[1]) < 6 && abs(planned[1] - planned[2]) < 6 && planned[0] > 200);   /* a light gray tint */
+    CHECK(memcmp(done, auto_done, 3) == 0);
+    CHECK(memcmp(planned, auto_planned, 3) == 0);
+    CHECK(auto_active[2] > auto_active[0]);                                 /* the first series color, blue */
+}
+
 /* draw data and renderer ------------------------------------------------ */
 
 static void build_rect(cui_ctx *ui, void *u) {
@@ -2650,6 +3370,35 @@ static void test_number_roll(void) {
     run(ui, build_roll, &r, 2);
     CHECK(!cui_needs_redraw(ui));
     cui_destroy(ui);
+}
+
+/** Drive the hover with explicit frame intervals so the wake can be tested. */
+static int paint_hover_tooltip(cui_ctx *ui, float elapsed, bool show_hint) {
+    cui_begin_frame(ui, elapsed);
+    cui_button(ui, "Anchor");
+    if (show_hint) cui_tooltip(ui, "Tooltip");
+    cui_end_frame(ui);
+    return cui_get_draw_data(ui)->vertex_count;
+}
+
+/** A cold hover waits for its deadline and appears on the requested wake. */
+static void test_tooltip_hover_delay(void) {
+    printf("tooltip: cold hover and idle wake\n");
+    for (int idle = 0; idle < 2; idle++) {
+        cui_ctx *ui = new_ctx();
+        cui_input_mouse_leave(ui);
+        if (idle) paint_hover_tooltip(ui, 0.25f, true);
+        paint_hover_tooltip(ui, idle ? 0.25f : 0.01f, true);
+        cui_vec2 pos = center(cui_last_rect(ui));
+        cui_input_mouse_move(ui, pos.x, pos.y);
+        int without_hint = paint_hover_tooltip(ui, 0.01f, false);
+        int hovered = paint_hover_tooltip(ui, 0, true);
+        CHECK(hovered == without_hint);
+        float wake = cui_next_wakeup(ui);
+        CHECK(wake > 0.5f && wake < 0.6f);
+        if (wake > 0) CHECK(paint_hover_tooltip(ui, wake, true) > hovered);
+        cui_destroy(ui);
+    }
 }
 
 static void test_truncated_tooltip(void) {
@@ -6978,6 +7727,9 @@ static void inc_update(void *u, cui_texture t, int x, int y, int w, int h, const
 static void inc_destroy(void *u, cui_texture t) {
     (void)u;
     cui_renderer_iface a = cui_sw_iface(inc_a), b = cui_sw_iface(inc_b);
+    test_stepper_width_isolation();
+    test_pagination_unnamed_width();
+    test_navigation_focus_visible();
     a.texture_destroy(a.user, t);
     b.texture_destroy(b.user, t);
 }
@@ -7078,6 +7830,8 @@ static void test_emoji_release(void) {
     CHECK(et_rgba_live == 0);
 }
 
+/** Share one software renderer across the test contexts and return a failing
+ * exit status to CTest if any check in the suite fails. */
 int main(void) {
     g_sw = cui_sw_create();
     test_color();
@@ -7091,16 +7845,25 @@ int main(void) {
     test_button_click();
     test_click_then_keys();
     test_keyboard_nav();
+    test_copy_button_focus();
+    test_nav_highlight();
+    test_clipboard_api();
+    test_clock_step_bound();
     test_toggles_and_slider();
     test_text_input();
+    test_disabled_password_reveal();
     test_textarea_and_clear();
     test_more_actions();
+    test_toggle_group_arrows();
     test_more_inputs();
+    test_range_slider_keyboard();
+    test_range_slider_context_menu();
     test_swipe();
     test_date_math();
     test_strings();
     test_pickers();
     test_disclosure();
+    test_confirm_popover_keyboard();
     test_checklist();
     test_data_grid();
     test_tree_table();
@@ -7133,18 +7896,26 @@ int main(void) {
     test_ai();
     test_text_capacity();
     test_dialog();
+    test_dialog_escape_after_edit();
     test_menu();
     test_focus_trap();
     test_extras();
+    test_toast_deadline();
     test_reorder();
     test_chrome();
     test_dock();
     test_virtual_list();
     test_theme();
+    test_series_palette();
+    test_radial_gauge_styles();
+    test_treemap_select();
+    test_sankey_node_colors();
+    test_gantt_state();
     test_renderer();
     test_scroll_fade();
     test_pretty_wrap();
     test_truncated_tooltip();
+    test_tooltip_hover_delay();
     test_truncated_tooltip_covered();
     test_number_roll();
     test_stress();

@@ -498,13 +498,13 @@ void cui_log_append_text(cui_log_buffer *b, cui_log_level level, double time, co
 
 void cui_log_appendv(cui_log_buffer *b, cui_log_level level, const char *fmt, va_list ap) {
     if (!b || !b->lines || b->text_cap == 0 || !fmt) return;
-    char small[512];
+    char line[512];   /* not "small": the Windows SDK defines it as a macro */
     va_list aq;
     va_copy(aq, ap);
-    int n = vsnprintf(small, sizeof small, fmt, aq);
+    int n = vsnprintf(line, sizeof line, fmt, aq);
     va_end(aq);
     if (n < 0) return;
-    if ((size_t)n < sizeof small) { cui_log_append_text(b, level, b->now, small, n); return; }
+    if ((size_t)n < sizeof line) { cui_log_append_text(b, level, b->now, line, n); return; }
     /* long lines are formatted straight into the ring, cut to fit */
     uint32_t len = (uint32_t)n > b->text_cap - 1 ? b->text_cap - 1 : (uint32_t)n;
     uint32_t off = cui__log_reserve(b, len);

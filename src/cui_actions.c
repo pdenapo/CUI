@@ -79,7 +79,8 @@ int cui_split_button_ex(cui_ctx *ui, const char *label, const char *const *items
     cui_id chev_id = ui->last_id;
     cui_pop_id(ui);
     cui__close(ui);
-    if (chev && p) cui__popup_set(ui, pid, !p->open);
+    bool key_activate = ui->focus == chev_id && ui->focus_visible && (cui_key_pressed(ui, CUI_KEY_ENTER) || cui_key_pressed(ui, CUI_KEY_SPACE));
+    if (chev && p && !(p->open && key_activate)) cui__popup_set(ui, pid, !p->open);   /* Enter picks the highlighted item. */
     if (p && !p->open && ui->focus == chev_id && ui->focus_visible && cui_key_pressed(ui, CUI_KEY_DOWN)) cui__popup_set(ui, pid, true);
     int result = main ? 0 : -1;
     if (cui__popup_begin(ui, pid, gid, CUI_PLACE_BOTTOM_END, 0, 6, 0, true)) {
@@ -104,6 +105,7 @@ int cui_split_button_ex(cui_ctx *ui, const char *label, const char *const *items
 
 typedef struct { float t[32], hover[32]; bool init; } cui__tg_state;
 
+/** Move focus once per arrow press unless a later control took focus. */
 bool cui_toggle_group_ex(cui_ctx *ui, const char *id_str, const char *const *labels, int count, bool *values, const cui_toggle_group_opts *o) {
     cui_toggle_group_opts d;
     memset(&d, 0, sizeof d);
@@ -113,6 +115,7 @@ bool cui_toggle_group_ex(cui_ctx *ui, const char *id_str, const char *const *lab
     cui_id gid = cui_make_id(ui, id_str);
     cui__tg_state *st = cui_state(ui, gid, sizeof *st);
     bool changed = false;
+    cui_id move_from = 0, next_focus = 0;
     float h = cui__control_height(ui, o->size);
     float inner = h - 6;
     int row = cui__node_new(ui, gid);
@@ -136,7 +139,10 @@ bool cui_toggle_group_ex(cui_ctx *ui, const char *id_str, const char *const *lab
             int to = -1;
             if (cui_key_pressed(ui, CUI_KEY_RIGHT) && k < count - 1) to = k + 1;
             if (cui_key_pressed(ui, CUI_KEY_LEFT) && k > 0) to = k - 1;
-            if (to >= 0) ui->focus = cui__hash(&to, sizeof to, gid);
+            if (to >= 0) {
+                move_from = iid;
+                next_focus = cui__hash(&to, sizeof to, gid);
+            }
         }
         if (!st->init) st->t[k] = values[k] ? 1.0f : 0.0f;
         cui__tween(ui, &st->t[k], values[k] ? 1.0f : 0.0f, CUI__T_STATE);
@@ -163,6 +169,10 @@ bool cui_toggle_group_ex(cui_ctx *ui, const char *id_str, const char *const *lab
             ui->last_id = iid;
             cui_tooltip(ui, cui__frame_strdup(ui, labels[k], cui__display_len(labels[k])));
         }
+    }
+    if (next_focus && ui->focus == move_from) {
+        ui->focus = next_focus;
+        ui->animating = true;
     }
     st->init = true;
     cui__close(ui);

@@ -41,8 +41,7 @@ static int cui__bar_row(cui_ctx *ui, cui_id id, float pad_y, float pad_x, bool e
     return row;
 }
 
-/* true when an open popup sits above the layer being built, so the keys are its */
-static bool cui__keys_covered(cui_ctx *ui) {
+bool cui__keys_covered(cui_ctx *ui) {
     int my_z = 0;
     for (int i = 0; i < ui->popup_count; i++) if (ui->popups[i].id == ui->current_layer) my_z = ui->popups[i].z;
     for (int i = 0; i < ui->popup_count; i++) if (ui->popups[i].open && ui->popups[i].z > my_z) return true;
@@ -346,8 +345,13 @@ void cui_menu_bar_menu_end(cui_ctx *ui) {
 
 #define CUI__TOOL_GAP 2.0f
 #define CUI__TOOL_OVERFLOW_MAX 64
+#define CUI__TOOL_PILL_PAD 5.0f     /* grouped and floating: between the pill's edge and its items */
+#define CUI__TOOL_WELL_PAD 3.0f     /* grouped: inside a raised group */
+#define CUI__TOOL_WELL_GAP 6.0f     /* grouped: between groups and the primary action */
+#define CUI__TOOL_GROUPED_W 40.0f   /* grouped: icon buttons are a little wider than tall */
 
-typedef struct { float total; int fire; } cui__toolbar_state;
+typedef struct { float total; int fire; float avail; } cui__toolbar_state;
+typedef struct { float hover, focus; } cui__cycle_state;
 typedef struct { const char *label, *icon; bool disabled, checked, sep; int index; } cui__tool_entry;
 
 struct cui__toolbar_build {
@@ -358,15 +362,49 @@ struct cui__toolbar_build {
     int index;
     cui__tool_entry over[CUI__TOOL_OVERFLOW_MAX];
     int over_count;
+    cui_toolbar_style style;
+    float item_w;              /* an icon button's width */
+    bool in_group;             /* between cui_toolbar_group_begin and _end */
+    bool group_open;           /* ...and its well was built (it was not in the overflow) */
 };
+
+/* the gap before the next item: groups in the grouped style sit further apart than items */
+static float cui__tool_gap(cui__toolbar_build *b) {
+    return b->style == CUI_TOOLBAR_GROUPED && !b->in_group ? CUI__TOOL_WELL_GAP : CUI__TOOL_GAP;
+}
 
 /* Room for one more item of width w? Items are measured the same way every
  * frame, visible or not, so the total (and the overflow decision) is stable. */
 static bool cui__tool_place(cui__toolbar_build *b, float w) {
-    b->x += (b->any ? CUI__TOOL_GAP : 0) + w;
+    b->x += (b->any ? cui__tool_gap(b) : 0) + w;
     b->any = true;
     if (!b->hiding && b->x > b->budget) b->hiding = true;
     return !b->hiding;
+}
+
+/* the width of a text button in the toolbar, measured the way the button lays itself out */
+static float cui__tool_text_w(cui_ctx *ui, cui__toolbar_build *b, const char *label, bool icon) {
+    bool roomy = b && b->style != CUI_TOOLBAR_PLAIN;
+    float pad = roomy ? 14 : 11, fs = roomy ? ui->theme.text_body : ui->theme.text_sm;
+    float w = 2 * pad + cui__text_width(ui, CUI_FONT_MEDIUM, cui__fs(ui, fs), label, cui__display_len(label), false);
+    if (icon) w += (roomy ? 16 : 14) + 6;
+    return w;
+}
+
+static cui_control_size cui__tool_size(cui__toolbar_build *b) {
+    return b && b->style != CUI_TOOLBAR_PLAIN ? CUI_SIZE_MD : CUI_SIZE_SM;
+}
+
+/* A pill as wide as its items cannot tell from its own width that it ran out of
+ * room, so it records what its parent offers (only layout knows), for the next frame. */
+static void cui__paint_tool_measure(cui_ctx *ui, cui_node *n, void *data) {
+    cui__toolbar_state *st = data;
+    if (n->parent < 0) return;
+    const cui_node *p = &ui->nodes[n->parent];
+    float avail = p->rect.w - p->pad[1] - p->pad[3];
+    float need = st->total + 2 * (CUI__TOOL_PILL_PAD + 1);
+    if (fabsf(avail - st->avail) > 0.5f && (need > avail || need > st->avail)) ui->animating = true;
+    st->avail = avail;
 }
 
 void cui_toolbar_begin(cui_ctx *ui, const char *id_str, const cui_toolbar_opts *o) {
@@ -377,14 +415,36 @@ void cui_toolbar_begin(cui_ctx *ui, const char *id_str, const cui_toolbar_opts *
     memset(b, 0, sizeof *b);
     b->id = cui_make_id(ui, id_str);
     b->st = cui_state(ui, b->id, sizeof(cui__toolbar_state));
-    b->h = ui->theme.control_sm;
+    b->style = o->style;
+    b->h = b->style == CUI_TOOLBAR_PLAIN ? ui->theme.control_sm : ui->theme.control_md;
+    b->item_w = b->style == CUI_TOOLBAR_GROUPED ? CUI__TOOL_GROUPED_W : b->h;
     float pad_x = 6;
     b->budget = 1e9f;
-    if (cui__has_prev_rect(ui, b->id)) {
-        float avail = cui__prev_rect(ui, b->id).w - 2 * pad_x;
-        if (b->st->total > avail + 0.5f) b->budget = avail - (b->h + CUI__TOOL_GAP);   /* leave room for "more" */
+    int row;
+    if (b->style == CUI_TOOLBAR_PLAIN) {
+        if (cui__has_prev_rect(ui, b->id)) {
+            float avail = cui__prev_rect(ui, b->id).w - 2 * pad_x;
+            if (b->st->total > avail + 0.5f) b->budget = avail - (b->h + CUI__TOOL_GAP);   /* leave room for "more" */
+        }
+        row = cui__bar_row(ui, b->id, 3, pad_x, !o->no_border, false);
+    } else {
+        float avail = b->st->avail - 2 * (CUI__TOOL_PILL_PAD + 1);
+        if (b->st->avail > 0 && b->st->total > avail + 0.5f) b->budget = avail - (b->item_w + CUI__TOOL_WELL_GAP);
+        bool grouped = b->style == CUI_TOOLBAR_GROUPED;
+        row = cui__node_new(ui, b->id);
+        cui_node *n = &ui->nodes[row];
+        n->dir = CUI_ROW;
+        n->align = CUI_ALIGN_CENTER;
+        n->gap = grouped ? CUI__TOOL_WELL_GAP : CUI__TOOL_GAP;
+        n->pad[0] = n->pad[1] = n->pad[2] = n->pad[3] = CUI__TOOL_PILL_PAD;
+        n->self_align = CUI__ALIGN_NOSTRETCH;
+        n->radius = CUI_CORNERS(grouped ? ui->theme.radius_surface : ui->theme.radius_panel);
+        n->bg = grouped ? CUI_C(ui, SURFACE_MUTED) : CUI_C(ui, SURFACE);
+        n->border = 1;
+        n->border_color = CUI_C(ui, BORDER);
+        n->paint = cui__paint_tool_measure;
+        n->paint_data = b->st;
     }
-    int row = cui__bar_row(ui, b->id, 3, pad_x, !o->no_border, false);
     cui__open(ui, row);
     cui_push_id(ui, id_str);
     cui__slots(ui)->tb = b;
@@ -397,22 +457,24 @@ static void cui__tool_overflow(cui_ctx *ui, cui__toolbar_build *b, const char *l
     e->icon = icon; e->disabled = disabled; e->checked = checked; e->sep = sep; e->index = index;
 }
 
+/* the next item's index, and whether it was chosen from the overflow menu last frame */
+static int cui__tool_index(cui__toolbar_build *b, bool *fired) {
+    int index = b ? b->index++ : 0;
+    *fired = b && b->st->fire == index + 1;
+    if (*fired) b->st->fire = 0;
+    return index;
+}
+
 bool cui_toolbar_button_ex(cui_ctx *ui, const char *icon, const cui_tool_opts *o) {
     cui_tool_opts d;
     memset(&d, 0, sizeof d);
     if (!o) o = &d;
     cui__toolbar_build *b = cui__slots(ui)->tb;
-    int index = b ? b->index++ : 0;
-    bool fired = b && b->st->fire == index + 1;   /* chosen from the overflow menu last frame */
-    if (fired) b->st->fire = 0;
+    bool fired;
+    int index = cui__tool_index(b, &fired);
     bool has_label = o->label && cui__display_len(o->label) > 0;
-    float h = ui->theme.control_sm;
-    float w = h;
-    if (has_label) {
-        /* the same measure as a small button: padding, icon, gap, label */
-        w = 22 + cui__text_width(ui, CUI_FONT_MEDIUM, cui__fs(ui, ui->theme.text_sm), o->label, cui__display_len(o->label), false);
-        if (icon) w += 14 + 6;
-    }
+    float w = b ? b->item_w : ui->theme.control_sm;
+    if (has_label) w = cui__tool_text_w(ui, b, o->label, icon != NULL);
     bool on = o->toggle && *o->toggle;
     bool disabled = o->disabled || cui_is_disabled(ui);
     bool clicked = false;
@@ -420,18 +482,22 @@ bool cui_toolbar_button_ex(cui_ctx *ui, const char *icon, const cui_tool_opts *o
         cui_button_opts bo;
         memset(&bo, 0, sizeof bo);
         bo.variant = CUI_BUTTON_GHOST;
-        bo.size = CUI_SIZE_SM;
+        bo.size = cui__tool_size(b);
         bo.disabled = o->disabled;
         bo.selected = on;
         bo.tooltip = o->tooltip;
         bo.shortcut = o->shortcut;
+        if (o->tone == CUI_TONE_ACCENT && (!o->toggle || on)) bo.color = cui__emphasis(ui);
+        else if (o->tone != CUI_TONE_NEUTRAL && (!o->toggle || on)) bo.color = cui__tone_color(ui, o->tone);
         if (has_label) {
             bo.icon = icon;
             clicked = cui_button_ex(ui, o->label, &bo);
         } else {
             if (!bo.tooltip) bo.tooltip = o->label;
+            if (b && b->item_w != b->h) bo.width = CUI_PX(b->item_w);
             clicked = cui_icon_button_ex(ui, icon ? icon : CUI_ICON_CIRCLE, &bo);
         }
+        if (o->flyout) cui_flyout_mark(ui);
     } else {
         const char *name = has_label ? o->label : o->tooltip ? o->tooltip : "";
         cui__tool_overflow(ui, b, name, icon, disabled, on, false, index);
@@ -441,16 +507,37 @@ bool cui_toolbar_button_ex(cui_ctx *ui, const char *icon, const cui_tool_opts *o
     return clicked;
 }
 
+/* the floating style's separators run the full height of the bar, from edge to edge */
+static void cui__paint_tool_divider(cui_ctx *ui, cui_node *n, void *data) {
+    cui_color c = *(cui_color *)data;
+    float top = n->rect.y, bottom = n->rect.y + n->rect.h;
+    for (int p = n->parent; p >= 0; p = ui->nodes[p].parent) {
+        if (ui->nodes[p].paint != cui__paint_tool_measure) continue;
+        top = ui->nodes[p].rect.y + 1;
+        bottom = ui->nodes[p].rect.y + ui->nodes[p].rect.h - 1;
+        break;
+    }
+    cui_draw_rect(ui, (cui_rect){ n->rect.x, top, 1, bottom - top }, CUI_CORNERS(0), c);
+}
+
 void cui_toolbar_separator(cui_ctx *ui) {
     cui__toolbar_build *b = cui__slots(ui)->tb;
-    float h = ui->theme.control_sm;
+    float h = b ? b->h : ui->theme.control_sm;
     if (b && !cui__tool_place(b, 1 + 2 * 5)) { cui__tool_overflow(ui, b, NULL, NULL, false, false, true, -1); return; }
     int box = cui__node_new(ui, 0);
     ui->nodes[box].pad[1] = ui->nodes[box].pad[3] = 5;
     ui->nodes[box].self_align = CUI_ALIGN_CENTER;
     cui__open(ui, box);
-    int l = cui__leaf(ui, 0, CUI_PX(1), CUI_PX(roundf(h * 0.55f)));
-    ui->nodes[l].bg = CUI_C(ui, BORDER);
+    if (b && b->style == CUI_TOOLBAR_FLOATING && !b->in_group) {
+        int l = cui__leaf(ui, 0, CUI_PX(1), CUI_PX(h));
+        cui_color *c = CUI_PAINT_DATA(ui, cui_color);
+        *c = CUI_C(ui, BORDER);
+        ui->nodes[l].paint = cui__paint_tool_divider;
+        ui->nodes[l].paint_data = c;
+    } else {
+        int l = cui__leaf(ui, 0, CUI_PX(1), CUI_PX(roundf(h * 0.55f)));
+        ui->nodes[l].bg = CUI_C(ui, BORDER);
+    }
     cui__close(ui);
 }
 
@@ -460,10 +547,203 @@ void cui_toolbar_spacer(cui_ctx *ui) {
     cui_spacer(ui);
 }
 
+void cui_toolbar_group_begin(cui_ctx *ui) {
+    cui__toolbar_build *b = cui__slots(ui)->tb;
+    if (!b || b->in_group) return;
+    if (b->style != CUI_TOOLBAR_GROUPED) {
+        if (b->any) cui_toolbar_separator(ui);
+        b->in_group = true;
+        return;
+    }
+    /* the well's padding and edge count toward the width, like an item */
+    b->x += (b->any ? CUI__TOOL_WELL_GAP : 0) + 2 * (CUI__TOOL_WELL_PAD + 1);
+    if (!b->hiding && b->x > b->budget) b->hiding = true;
+    b->any = false;
+    b->in_group = true;
+    if (b->hiding) { cui__tool_overflow(ui, b, NULL, NULL, false, false, true, -1); return; }
+    int g = cui__node_new(ui, 0);
+    cui_node *n = &ui->nodes[g];
+    n->dir = CUI_ROW;
+    n->align = CUI_ALIGN_CENTER;
+    n->gap = CUI__TOOL_GAP;
+    n->pad[0] = n->pad[1] = n->pad[2] = n->pad[3] = CUI__TOOL_WELL_PAD;
+    n->radius = CUI_CORNERS(ui->theme.radius_surface - CUI__TOOL_PILL_PAD);
+    n->bg = CUI_C(ui, SURFACE);
+    n->border = 1;
+    n->border_color = ui->mode == CUI_THEME_DARK ? CUI_C(ui, BORDER_SUBTLE) : CUI_C(ui, BORDER);
+    cui__open(ui, g);
+    b->group_open = true;
+}
+
+void cui_toolbar_group_end(cui_ctx *ui) {
+    cui__toolbar_build *b = cui__slots(ui)->tb;
+    if (!b || !b->in_group) return;
+    if (b->group_open) cui__close(ui);
+    b->group_open = false;
+    b->in_group = false;
+    b->any = true;
+}
+
+bool cui_toolbar_radio_ex(cui_ctx *ui, const char *id_str, const char *const *icons, int count, int *index, const cui_toolbar_radio_opts *o) {
+    cui_toolbar_radio_opts d;
+    memset(&d, 0, sizeof d);
+    if (!o) o = &d;
+    if (count <= 0 || !index) return false;
+    if (count > 32) count = 32;
+    cui__toolbar_build *b = cui__slots(ui)->tb;
+    int base = b ? b->index : 0, old = *index;
+    if (b) {
+        b->index += count;
+        if (b->st->fire > base && b->st->fire <= base + count) { *index = b->st->fire - base - 1; b->st->fire = 0; }
+    }
+    cui_control_size size = cui__tool_size(b);
+    float h = cui__control_height(ui, size);
+    if (!b || cui__tool_place(b, count * (h - 6) + 6)) {   /* the segmented control's square segments, inside its 3 point inset */
+        const char **none = cui__frame_alloc(ui, sizeof(const char *) * (size_t)count);
+        memset(none, 0, sizeof(const char *) * (size_t)count);
+        cui_segmented_opts so;
+        memset(&so, 0, sizeof so);
+        so.size = size;
+        so.icons = icons;
+        cui_segmented_ex(ui, id_str, none, count, index, &so);
+    } else {
+        bool disabled = cui_is_disabled(ui);
+        for (int k = 0; k < count; k++)
+            cui__tool_overflow(ui, b, o->labels ? o->labels[k] : "", icons ? icons[k] : NULL, disabled, k == *index, false, base + k);
+    }
+    return *index != old;
+}
+
+bool cui_toolbar_primary_ex(cui_ctx *ui, const char *icon, const cui_tool_opts *o) {
+    cui_tool_opts d;
+    memset(&d, 0, sizeof d);
+    if (!o) o = &d;
+    cui__toolbar_build *b = cui__slots(ui)->tb;
+    bool fired;
+    int index = cui__tool_index(b, &fired);
+    bool grouped = b && b->style == CUI_TOOLBAR_GROUPED;
+    cui_control_size size = grouped ? CUI_SIZE_LG : cui__tool_size(b);
+    bool has_label = o->label && cui__display_len(o->label) > 0;
+    float w = has_label ? cui__tool_text_w(ui, b, o->label, icon != NULL) + (grouped ? 8 : 0) : cui__control_height(ui, size);
+    bool disabled = o->disabled || cui_is_disabled(ui);
+    bool clicked = false;
+    if (!b || cui__tool_place(b, w)) {
+        cui_button_opts bo;
+        memset(&bo, 0, sizeof bo);
+        bo.variant = CUI_BUTTON_PRIMARY;
+        bo.size = size;
+        bo.disabled = o->disabled;
+        bo.tooltip = o->tooltip ? o->tooltip : has_label ? NULL : o->label;
+        bo.shortcut = o->shortcut;
+        bo.color = CUI_C(ui, BACKGROUND);
+        if (has_label) { bo.icon = icon; clicked = cui_button_ex(ui, o->label, &bo); }
+        else clicked = cui_icon_button_ex(ui, icon ? icon : CUI_ICON_SPARKLES, &bo);
+        /* filled with the text color rather than the accent: the one solid thing on the bar */
+        cui_node *n = &ui->nodes[ui->last_node];
+        cui_color fg = CUI_C(ui, FOREGROUND), bg = CUI_C(ui, BACKGROUND);
+        n->bg = ui->active == ui->last_id ? cui_mix(fg, bg, 0.06f) : ui->hot == ui->last_id ? cui_mix(fg, bg, 0.14f) : fg;
+        if (grouped) n->radius = CUI_CORNERS(ui->theme.radius_surface - CUI__TOOL_PILL_PAD);
+        if (o->flyout) cui_flyout_mark(ui);
+    } else {
+        cui__tool_overflow(ui, b, has_label ? o->label : o->tooltip ? o->tooltip : "", icon, disabled, false, false, index);
+    }
+    return (clicked || fired) && !disabled;
+}
+
+bool cui_toolbar_cycle_ex(cui_ctx *ui, const char *id_str, const char *const *items, int count, int *index, const cui_tool_opts *o) {
+    cui_tool_opts d;
+    memset(&d, 0, sizeof d);
+    if (!o) o = &d;
+    if (count <= 0 || !items || !index) return false;
+    cui__toolbar_build *b = cui__slots(ui)->tb;
+    bool fired;
+    int idx = cui__tool_index(b, &fired);
+    if (*index < 0 || *index >= count) *index = 0;
+    const char *cur = items[*index] ? items[*index] : "";
+    bool disabled = o->disabled || cui_is_disabled(ui);
+    bool clicked = false;
+    /* tighter than a text button: a value and a small chevron, so a row of pickers stays short */
+    float h = b ? b->h : ui->theme.control_sm, fs = cui__fs(ui, b && b->style != CUI_TOOLBAR_PLAIN ? ui->theme.text_body : ui->theme.text_sm);
+    float w = 10 + ceilf(cui__text_width(ui, CUI_FONT_MEDIUM, fs, cur, -1, false)) + 4 + 14 + 6;
+    if (!b || cui__tool_place(b, w)) {
+        cui_id cid = cui_make_id(ui, id_str);   /* the id stays while the label changes, so focus stays on it */
+        cui_push_disabled(ui, disabled);
+        cui_interact r = cui__interact(ui, cid, CUI_IF_FOCUSABLE);
+        cui_pop_disabled(ui);
+        cui__cycle_state *cs = cui_state(ui, cid, sizeof *cs);
+        cui__tween(ui, &cs->hover, r.hovered ? 1.0f : 0.0f, CUI__T_HOVER);
+        cui__tween(ui, &cs->focus, r.focus_visible ? 1.0f : 0.0f, CUI__T_FOCUS);
+        int i = cui__node_new(ui, cid);
+        cui_node *n = &ui->nodes[i];
+        n->dir = CUI_ROW; n->align = CUI_ALIGN_CENTER; n->gap = 4;
+        n->h = CUI_PX(h); n->w = CUI_PX(w);
+        n->pad[3] = 10; n->pad[1] = 6;
+        n->radius = CUI_CORNERS(CUI__R_CONTROL(ui, h));
+        n->bg = r.pressed ? CUI_C(ui, ACTIVE) : cui_alpha(CUI_C(ui, HOVER), cs->hover);
+        n->opacity = disabled ? CUI__DISABLED : 1.0f;
+        n->self_align = CUI_ALIGN_CENTER;
+        cui__mark_interactive(ui, i, CUI_IF_FOCUSABLE);
+        if (r.hovered) cui__set_cursor(ui, disabled ? CUI_CURSOR_NOT_ALLOWED : CUI_CURSOR_HAND);
+        cui__focus_ring(ui, i, cs->focus);
+        cui__open(ui, i);
+        cui_color fg = o->tone != CUI_TONE_NEUTRAL ? cui__tone_color(ui, o->tone) : cui_mix(CUI_C(ui, TEXT_SECONDARY), CUI_C(ui, FOREGROUND), cs->hover);
+        int t = cui__text_node(ui, cur, -1, CUI_FONT_MEDIUM, fs, fg, false);
+        ui->nodes[t].flags |= CUI_NF_TABULAR;
+        ui->nodes[t].line_height = 1.3f;
+        cui__icon_node(ui, CUI_ICON_CHEVRON_DOWN, 14, CUI_C(ui, TEXT_MUTED));
+        cui__close(ui);
+        ui->last_id = cid;
+        ui->last_node = i;
+        if (o->tooltip) cui_tooltip(ui, o->shortcut ? cui__frame_printf(ui, "%s  \xc2\xb7  %s", o->tooltip, o->shortcut) : o->tooltip);
+        clicked = r.clicked;
+        if (o->flyout) cui_flyout_mark(ui);
+    } else {
+        const char *name = o->tooltip ? cui__frame_printf(ui, "%s: %s", o->tooltip, cur) : cur;
+        cui__tool_overflow(ui, b, name, NULL, disabled, false, false, idx);
+    }
+    if ((clicked || fired) && !disabled) { *index = (*index + 1) % count; return true; }
+    return false;
+}
+
+bool cui__toolbar_reserve(cui_ctx *ui, float w) {
+    cui__toolbar_build *b = cui__slots(ui)->tb;
+    return !b || cui__tool_place(b, w);
+}
+
+/* a small triangle tucked into the end-side bottom corner of a button */
+typedef struct { int anchor; cui_color c; } cui__flyout_paint;
+static void cui__paint_flyout_mark(cui_ctx *ui, cui_node *n, void *data) {
+    (void)n;
+    cui__flyout_paint *p = data;
+    const cui_node *a = &ui->nodes[p->anchor];
+    float s = 5, in = 5;
+    float x = a->rtl ? a->rect.x + in : a->rect.x + a->rect.w - in, y = a->rect.y + a->rect.h - in;
+    float dx = a->rtl ? s : -s;
+    cui_vec2 pts[3] = { { x, y }, { x + dx, y }, { x, y - s } };
+    cui_color c = p->c;
+    c.a = (uint8_t)(c.a * (a->opacity > 0 ? a->opacity : 1));
+    cui_draw_polygon(ui, pts, 3, c);
+}
+
+void cui_flyout_mark(cui_ctx *ui) {
+    int a = ui->last_node;
+    if (a < 0 || a >= ui->node_count) return;
+    int m = cui__absolute(ui, 0, 0, 0, 0, 0);
+    ui->nodes[m].abs_anchor = a;
+    ui->nodes[m].flags |= CUI_NF_OVERLAY;   /* over the button's hover fill */
+    cui__flyout_paint *p = CUI_PAINT_DATA(ui, cui__flyout_paint);
+    p->anchor = a;
+    p->c = cui_alpha(CUI_C(ui, TEXT_MUTED), 0.9f);
+    ui->nodes[m].paint = cui__paint_flyout_mark;
+    ui->nodes[m].paint_data = p;
+    ui->last_node = a;   /* the mark is part of the component: it stays the previous one */
+}
+
 void cui_toolbar_end(cui_ctx *ui) {
     cui__chrome_slots *s = cui__slots(ui);
     cui__toolbar_build *b = s->tb;
     if (!b) return;
+    if (b->in_group) cui_toolbar_group_end(ui);
     b->st->total = b->x;
     if (b->over_count > 0) {
         cui_id pid = b->id ^ 0x0F10Fu;
@@ -472,9 +752,10 @@ void cui_toolbar_end(cui_ctx *ui) {
         cui_button_opts bo;
         memset(&bo, 0, sizeof bo);
         bo.variant = CUI_BUTTON_GHOST;
-        bo.size = CUI_SIZE_SM;
+        bo.size = cui__tool_size(b);
         bo.selected = open;
         bo.tooltip = "More tools";
+        if (b->item_w != b->h) bo.width = CUI_PX(b->item_w);
         bool clicked = cui_icon_button_ex(ui, CUI_ICON_ELLIPSIS, &bo);
         ui->nodes[ui->last_node].scale = 1.0f;   /* a menu trigger answers with color */
         cui_id anchor = ui->last_id;

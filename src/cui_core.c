@@ -280,6 +280,15 @@ void cui_set_platform(cui_ctx *ui, const cui_platform_iface *p) {
     if (p) ui->platform = *p; else memset(&ui->platform, 0, sizeof ui->platform);
 }
 
+void cui_set_clipboard_text(cui_ctx *ui, const char *text) {
+    if (text && ui->platform.set_clipboard) ui->platform.set_clipboard(ui->platform.user, text);
+}
+
+const char *cui_get_clipboard_text(cui_ctx *ui) {
+    const char *s = ui->platform.get_clipboard ? ui->platform.get_clipboard(ui->platform.user) : NULL;
+    return s ? s : "";
+}
+
 void cui_set_viewport(cui_ctx *ui, float w, float h, float scale) {
     if (scale <= 0) scale = 1;
     if (w != ui->vw || h != ui->vh || scale != ui->scale) ui->settle_frames = CUI_MAX(ui->settle_frames, 2);
@@ -612,6 +621,7 @@ static void cui__compute_hot(cui_ctx *ui) {
     }
 }
 
+/** Track focus independently from whether a popup covers keyboard input. */
 cui_interact cui__interact(cui_ctx *ui, cui_id id, int flags) {
     cui_interact r;
     memset(&r, 0, sizeof r);
@@ -650,7 +660,8 @@ cui_interact cui__interact(cui_ctx *ui, cui_id id, int flags) {
     for (int i = 0; i < ui->popup_count; i++) if (ui->popups[i].id == ui->current_layer) my_z = ui->popups[i].z;
     bool covered = false;   /* an open popup above this control owns the keyboard */
     for (int i = 0; i < ui->popup_count; i++) if (ui->popups[i].open && ui->popups[i].z > my_z) { covered = true; break; }
-    if (r.focused && !ui->focus_visible && !covered && !(flags & CUI_IF_TEXT) &&
+    r.keyboard_focused = r.focused && !covered;
+    if (r.keyboard_focused && !ui->focus_visible && !(flags & CUI_IF_TEXT) &&
         (cui_key_pressed(ui, CUI_KEY_ENTER) || cui_key_pressed(ui, CUI_KEY_SPACE) || cui_key_pressed(ui, CUI_KEY_LEFT) ||
          cui_key_pressed(ui, CUI_KEY_RIGHT) || cui_key_pressed(ui, CUI_KEY_UP) || cui_key_pressed(ui, CUI_KEY_DOWN) ||
          cui_key_pressed(ui, CUI_KEY_HOME) || cui_key_pressed(ui, CUI_KEY_END)))
@@ -726,12 +737,16 @@ float cui_animate_spring(cui_ctx *ui, cui_id id, float target, float duration, f
 /* Frame                                                                    */
 /* ------------------------------------------------------------------------ */
 
+/** Advance timers by elapsed time and cap only the animation step after idle. */
 void cui_begin_frame(cui_ctx *ui, float dt) {
     if (ui->in_frame) cui_end_frame(ui);
-    if (dt < 0) dt = 0;
-    if (dt > 0.25f) dt = 0.25f;
+    if (!isfinite(dt) || dt < 0) dt = 0;
+    /* at most an hour of clock per frame: a first dt of "seconds since 1970" (a last time of 0)
+     * would otherwise put the clock where a float cannot tell frames apart, and the spinner,
+     * which draws from (float)ui->time, would stop. An idle hour expires every timer anyway. */
+    if (dt > 3600.0f) dt = 3600.0f;
     ui->in_frame = true;
-    ui->dt = dt;
+    ui->dt = CUI_MIN(dt, 0.25f);
     ui->time += dt;
     ui->frame++;
     ui->animating = false;

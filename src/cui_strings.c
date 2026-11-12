@@ -38,6 +38,12 @@ const char *cui__size_text(cui_ctx *ui, double v) {
     return cui__frame_printf(ui, v < 10 ? "%.1f %s" : "%.0f %s", v, u[k]);
 }
 
+const char *cui__mmss(cui_ctx *ui, float s) {
+    if (!(s >= 0)) s = 0;
+    int t = (int)s;
+    return cui__frame_printf(ui, "%d:%02d", t / 60, t % 60);
+}
+
 /* minutes east of UTC of the local time zone at time t */
 int cui__utc_offset(int64_t t64) {
     time_t t = (time_t)t64;

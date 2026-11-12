@@ -339,12 +339,12 @@ cui_id cui__position_id(cui_ctx *ui, uint32_t salt) {
     return cui__hash(key, sizeof key, salt);
 }
 
-static bool cui__button_impl(cui_ctx *ui, const char *label, const char *icon_only, const cui_button_opts *o) {
+/** Use the caller's ID for both input and visual state. Draw icon-only glyphs
+ * directly so a confirmation check can replace the old glyph immediately. */
+static bool cui__button_impl(cui_ctx *ui, cui_id id, const char *label, const char *icon_only, const cui_button_opts *o) {
     cui_button_opts d;
     memset(&d, 0, sizeof d);
     if (!o) o = &d;
-    cui_id id = cui_make_id(ui, icon_only ? (o->tooltip ? o->tooltip : icon_only) : label);
-    if (icon_only && o->tooltip) id = cui__hash_str(icon_only, id);
     bool disabled = o->disabled || cui_is_disabled(ui);
     cui_push_disabled(ui, disabled);
     cui_interact r = cui__interact(ui, id, CUI_IF_FOCUSABLE);
@@ -369,7 +369,6 @@ static bool cui__button_impl(cui_ctx *ui, const char *label, const char *icon_on
     float pad = o->size == CUI_SIZE_SM ? 11 : o->size == CUI_SIZE_LG ? 18 : 14;
     if (v == CUI_BUTTON_LINK) pad = 2;
 
-    cui_id swap_id = id ^ 0x1C05A9u;   /* per button: positions repeat across unnamed containers */
     int i = cui__node_new(ui, id);
     cui_node *n = &ui->nodes[i];
     n->dir = CUI_ROW;
@@ -406,9 +405,9 @@ static bool cui__button_impl(cui_ctx *ui, const char *label, const char *icon_on
     if (r.hovered) cui__set_cursor(ui, CUI_CURSOR_HAND);
     if (disabled && ui->hot == id) cui__set_cursor(ui, CUI_CURSOR_NOT_ALLOWED);
     cui__open(ui, i);
-    const char *icon = icon_only ? icon_only : o->icon;
     if (o->loading) cui__spinner_node(ui, icon_size - 2, col.fg);
-    else if (icon) cui__icon_swap(ui, swap_id, icon, icon_size, col.fg);
+    else if (icon_only) cui__icon_node(ui, icon_only, icon_size, col.fg);
+    else if (o->icon) cui__icon_swap(ui, id ^ 0x1C05A9u, o->icon, icon_size, col.fg);
     if (!icon_only && label && cui__display_len(label) > 0) {
         cui__label_text(ui, label, CUI_FONT_MEDIUM, cui__fs(ui, fs), col.fg);
     }
@@ -433,11 +432,20 @@ static bool cui__button_impl(cui_ctx *ui, const char *label, const char *icon_on
 }
 
 bool cui_button_ex(cui_ctx *ui, const char *label, const cui_button_opts *o) {
-    return cui__button_impl(ui, label, NULL, o);
+    return cui__button_impl(ui, cui_make_id(ui, label), label, NULL, o);
 }
 
+bool cui__icon_button_id(cui_ctx *ui, cui_id id, const char *icon, const cui_button_opts *o) {
+    return cui__button_impl(ui, id, NULL, icon, o);
+}
+
+/** Include both the icon and tooltip in the ID so two buttons in the same
+ * scope can share either one and still be distinguishable. */
 bool cui_icon_button_ex(cui_ctx *ui, const char *icon, const cui_button_opts *o) {
-    return cui__button_impl(ui, NULL, icon, o);
+    const char *tooltip = icon && o ? o->tooltip : NULL;
+    cui_id id = cui_make_id(ui, tooltip ? tooltip : icon);
+    if (tooltip) id = cui__hash_str(icon, id);
+    return cui__icon_button_id(ui, id, icon, o);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -489,7 +497,7 @@ static cui_color cui__name_tone(cui_ctx *ui, const char *name) {
     return tones[h % 7];
 }
 
-static int cui__initials(const char *name, char *out) {
+int cui__initials(const char *name, char *out) {
     int n = 0;
     bool word_start = true;
     for (const char *p = name; p && *p && n < 8; p++) {
@@ -898,6 +906,8 @@ void cui_metric_ex(cui_ctx *ui, const char *label, const char *value, const cui_
     cui__close(ui);
     int vr = cui__node_new(ui, 0);
     ui->nodes[vr].dir = CUI_ROW; ui->nodes[vr].align = CUI_ALIGN_END; ui->nodes[vr].gap = 10;
+    ui->nodes[vr].flags |= CUI_NF_ROW_WRAP;   /* on a narrow card the change goes under the value instead of both being cut */
+    ui->nodes[vr].w = CUI_FILL;
     cui__open(ui, vr);
     int vt = cui__text_node(ui, value, -1, CUI_FONT_DISPLAY, cui__fs(ui, 28), CUI_C(ui, FOREGROUND), false);
     ui->nodes[vt].line_height = 1.1f;

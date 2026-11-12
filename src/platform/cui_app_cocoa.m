@@ -13,7 +13,7 @@
 
 @class CUIView;
 
-@interface CUIPlat : NSObject <NSWindowDelegate>
+@interface CUIPlat : NSObject <NSWindowDelegate, NSApplicationDelegate>
 @property (nonatomic, strong) NSWindow *window;
 @property (nonatomic, strong) CUIView *view;
 @property (nonatomic, strong) NSOpenGLContext *gl;
@@ -198,8 +198,25 @@ static cui_key cui__mac_key(NSEvent *e) {
 - (NSUInteger)characterIndexForPoint:(NSPoint)p { (void)p; return NSNotFound; }
 @end
 
+/* An empty application-defined event, posted to end a wait in nextEventMatchingMask:
+ * that has no event of its own to return (a quit from the Dock or by Apple event). */
+static void cui__mac_wake(void) {
+    NSEvent *wake = [NSEvent otherEventWithType:NSEventTypeApplicationDefined location:NSZeroPoint modifierFlags:0
+                                      timestamp:0 windowNumber:0 context:nil subtype:0 data1:0 data2:0];
+    [NSApp postEvent:wake atStart:NO];
+}
+
 @implementation CUIPlat
 - (BOOL)windowShouldClose:(NSWindow *)w { (void)w; self.app->running = false; return NO; }
+/* Quit from the menu, Cmd-Q, the Dock or AppleScript ends cui_app_run (or makes cui_app_frame
+ * return false) the way closing the window does, so the code after it runs. AppKit's default
+ * would call exit() from inside the event loop. SDL2 and GLFW answer the same way. */
+- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender {
+    (void)sender;
+    self.app->running = false;
+    cui__mac_wake();
+    return NSTerminateCancel;
+}
 - (void)windowDidResize:(NSNotification *)n {
     (void)n;
     if (self.gl) [self.gl update];
@@ -284,6 +301,7 @@ bool cui__plat_init(cui_app *app) {
         w.contentMinSize = NSMakeSize(app->desc.min_width, app->desc.min_height);
         w.acceptsMouseMovedEvents = YES;
         w.delegate = p;
+        if (!NSApp.delegate) NSApp.delegate = p;   /* an app that set its own delegate keeps it */
         cui_color bg = app->ui->theme.colors[CUI_TOKEN_BACKGROUND];
         w.backgroundColor = [NSColor colorWithSRGBRed:bg.r / 255.0 green:bg.g / 255.0 blue:bg.b / 255.0 alpha:1];
         if (@available(macOS 10.14, *)) {
@@ -322,6 +340,7 @@ void cui__plat_shutdown(cui_app *app) {
     app->plat = NULL;
     if (p.gl) { [NSOpenGLContext clearCurrentContext]; p.gl = nil; }
     p.window.delegate = nil;
+    if (NSApp.delegate == p) NSApp.delegate = nil;
     [p.window close];
     p.window = nil;
     p.view = nil;

@@ -122,6 +122,13 @@ bool cui__plat_init(cui_app *app) {
     glfwWindowHint(GLFW_RESIZABLE, app->desc.fixed_size ? GLFW_FALSE : GLFW_TRUE);
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE);
+    if (app->desc.app_id) {   /* WM_CLASS on X11, app_id on Wayland; other systems ignore these */
+        glfwWindowHintString(GLFW_X11_CLASS_NAME, app->desc.app_id);
+        glfwWindowHintString(GLFW_X11_INSTANCE_NAME, app->desc.app_id);
+#ifdef GLFW_WAYLAND_APP_ID   /* GLFW 3.4 */
+        glfwWindowHintString(GLFW_WAYLAND_APP_ID, app->desc.app_id);
+#endif
+    }
     g->win = glfwCreateWindow(app->desc.width, app->desc.height, app->title, NULL, NULL);
     if (!g->win) { free(g); app->plat = NULL; glfwTerminate(); return false; }
     glfwSetWindowUserPointer(g->win, app);

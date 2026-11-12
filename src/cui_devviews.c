@@ -40,6 +40,8 @@ static void cui__paint_uptime(cui_ctx *ui, cui_node *nd, void *data) {
         float v = p->days[p->first + k];
         float x = r.x + k * (p->bw + p->gap);
         cui_color c = cui__up_color(ui, v);
+        /* healthy days sit back a little, so the rare bad day stands out among hundreds of good ones */
+        if (v >= 0.999f) c = cui_mix(c, CUI_C(ui, SURFACE), ui->mode == CUI_THEME_DARK ? 0.12f : 0.07f);
         if (p->hover >= 0 && k != p->hover) c = cui_alpha(c, 0.75f);
         float inset = k == p->hover ? 0 : 2;
         cui_draw_rect(ui, (cui_rect){ x, r.y + inset, p->bw, r.h - inset * 2 }, CUI_CORNERS(CUI_MIN(2.0f, p->bw * 0.5f)), c);

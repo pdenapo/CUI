@@ -22,6 +22,12 @@
 #pragma GCC diagnostic ignored "-Wsign-compare"
 #pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
 #endif
+#if defined(__clang__) && defined(__has_warning)
+#if __has_warning("-Wunused-but-set-global")
+/* newer clang: the HDR gamma and scale globals are only read with HDR on */
+#pragma clang diagnostic ignored "-Wunused-but-set-global"
+#endif
+#endif
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable: 4996 4244 4456 4457)

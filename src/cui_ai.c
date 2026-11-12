@@ -1,6 +1,6 @@
 /* AI interface pieces: reasoning, tool calls, plans, status, sources,
  * context meter, response actions, prompt suggestions, model picker, chat
- * composer and a voice orb. */
+ * composer (with its voice recorder) and the deprecated voice orb. */
 #include "cui_internal.h"
 
 
@@ -840,108 +840,50 @@ bool cui_model_picker_ex(cui_ctx *ui, const char *id_str, const cui_model *model
 /* Chat composer                                                            */
 /* ------------------------------------------------------------------------ */
 
-typedef struct { float focus; cui_spring send; } cui__cmp_state;
+typedef struct { float focus; cui_spring send; bool was_recording; } cui__cmp_state;
 
-int cui_chat_composer_ex(cui_ctx *ui, const char *id_str, char *buf, size_t cap, const cui_composer_opts *o) {
-    cui_composer_opts d;
-    memset(&d, 0, sizeof d);
-    if (!o) o = &d;
-    if (!buf || cap == 0) return 0;
-    int result = 0;
-    cui_id id = cui_make_id(ui, id_str);
-    cui_id fid = id ^ 0xF1E1Du;
-    cui__cmp_state *st = cui_state(ui, id, sizeof *st);
-    bool empty = true;
-    for (const char *c = buf; *c; c++) if (*c != ' ' && *c != '\n' && *c != '\t') { empty = false; break; }
-    /* Enter sends; Shift+Enter is a new line */
-    if (ui->focus == fid && cui_key_pressed(ui, CUI_KEY_ENTER) && !(ui->mods & (CUI_MOD_SHIFT | CUI_MOD_CTRL | CUI_MOD_SUPER))) {
-        ui->kpressed[CUI_KEY_ENTER] = 0;
-        if (!empty && !o->busy) result |= CUI_COMPOSER_SEND;
-    }
-    cui__tween(ui, &st->focus, ui->focus == fid ? 1.0f : 0.0f, CUI__T_FOCUS);
-    int box = cui__node_new(ui, id);
-    cui_node *bn = &ui->nodes[box];
-    bn->w = o->width.kind ? o->width : CUI_FILL; bn->gap = 4;
-    bn->pad[0] = 10; bn->pad[1] = bn->pad[3] = 10; bn->pad[2] = 10;
-    bn->radius = CUI_CORNERS(ui->theme.radius_surface);
-    bn->bg = ui->mode == CUI_THEME_DARK ? cui_mix(CUI_C(ui, SURFACE), CUI_C(ui, FOREGROUND), 0.04f) : CUI_C(ui, SURFACE);
-    bn->border = 1;
-    bn->border_color = cui_mix(CUI_C(ui, BORDER), CUI_C(ui, BORDER_STRONG), st->focus);
-    bn->elevation = CUI_ELEVATION_RAISED; bn->elevation_alpha = 0.6f + 0.4f * st->focus;
-    cui__open(ui, box);
-    cui_push_id(ui, id_str);
-    /* attachments */
-    if (o->attachment_count > 0 && o->attachments) {
-        int row = cui__node_new(ui, 0);
-        ui->nodes[row].dir = CUI_ROW; ui->nodes[row].gap = 6; ui->nodes[row].flags |= CUI_NF_WRAP; ui->nodes[row].w = CUI_FILL;
-        ui->nodes[row].pad[1] = ui->nodes[row].pad[3] = 2; ui->nodes[row].pad[2] = 4;
-        cui__open(ui, row);
-        for (int k = 0; k < o->attachment_count; k++) {
-            int chip = cui__node_new(ui, 0);
-            cui_node *cn = &ui->nodes[chip];
-            cn->dir = CUI_ROW; cn->align = CUI_ALIGN_CENTER; cn->gap = 6;
-            cn->pad[0] = cn->pad[2] = 4; cn->pad[3] = 6; cn->pad[1] = 4;
-            cn->radius = CUI_CORNERS(CUI__R_ITEM(ui));
-            cn->bg = ui->mode == CUI_THEME_DARK ? cui_mix(CUI_C(ui, SURFACE), CUI_C(ui, FOREGROUND), 0.08f) : CUI_C(ui, SURFACE_MUTED);
-            cn->border = 1; cn->border_color = CUI_C(ui, BORDER_SUBTLE);
-            cui__open(ui, chip);
-            int ib = cui__node_new(ui, 0);
-            ui->nodes[ib].w = CUI_PX(24); ui->nodes[ib].h = CUI_PX(24); ui->nodes[ib].radius = CUI_CORNERS(CUI__R_SMALL);
-            ui->nodes[ib].bg = CUI_C(ui, SURFACE); ui->nodes[ib].dir = CUI_STACK; ui->nodes[ib].align = CUI_ALIGN_CENTER; ui->nodes[ib].justify = CUI_JUSTIFY_CENTER;
-            cui__open(ui, ib);
-            cui__icon_node(ui, CUI_ICON_FILE_TEXT, 14, CUI_C(ui, TEXT_SECONDARY));
-            cui__close(ui);
-            int t = cui__text_node(ui, o->attachments[k], -1, CUI_FONT_MEDIUM, cui__fs(ui, ui->theme.text_xs + 0.5f), CUI_C(ui, FOREGROUND), false);
-            ui->nodes[t].line_height = 1.3f; ui->nodes[t].max_w = 160;
-            cui_button_opts xo;
-            memset(&xo, 0, sizeof xo);
-            xo.variant = CUI_BUTTON_GHOST; xo.size = CUI_SIZE_SM; xo.tooltip = "Remove";
-            cui_push_id_int(ui, k);
-            if (cui_icon_button_ex(ui, CUI_ICON_X, &xo)) { result |= CUI_COMPOSER_REMOVE; if (o->removed) *o->removed = k; }
-            cui_pop_id(ui);
-            ui->nodes[ui->last_node].w = CUI_PX(22); ui->nodes[ui->last_node].h = CUI_PX(22);
-            cui__close(ui);
-        }
+/* the ids a composer's parts answer to, so focus can move between the text, the
+ * microphone and the recorder's buttons */
+typedef struct { cui_id id, fid, sid, mic, cancel; } cui__cmp_ids;
+
+static void cui__composer_attachments(cui_ctx *ui, const cui_composer_opts *o, int *result) {
+    int row = cui__node_new(ui, 0);
+    ui->nodes[row].dir = CUI_ROW; ui->nodes[row].gap = 6; ui->nodes[row].flags |= CUI_NF_WRAP; ui->nodes[row].w = CUI_FILL;
+    ui->nodes[row].pad[1] = ui->nodes[row].pad[3] = 2; ui->nodes[row].pad[2] = 4;
+    cui__open(ui, row);
+    for (int k = 0; k < o->attachment_count; k++) {
+        int chip = cui__node_new(ui, 0);
+        cui_node *cn = &ui->nodes[chip];
+        cn->dir = CUI_ROW; cn->align = CUI_ALIGN_CENTER; cn->gap = 6;
+        cn->pad[0] = cn->pad[2] = 4; cn->pad[3] = 6; cn->pad[1] = 4;
+        cn->radius = CUI_CORNERS(CUI__R_ITEM(ui));
+        cn->bg = ui->mode == CUI_THEME_DARK ? cui_mix(CUI_C(ui, SURFACE), CUI_C(ui, FOREGROUND), 0.08f) : CUI_C(ui, SURFACE_MUTED);
+        cn->border = 1; cn->border_color = CUI_C(ui, BORDER_SUBTLE);
+        cui__open(ui, chip);
+        int ib = cui__node_new(ui, 0);
+        ui->nodes[ib].w = CUI_PX(24); ui->nodes[ib].h = CUI_PX(24); ui->nodes[ib].radius = CUI_CORNERS(CUI__R_SMALL);
+        ui->nodes[ib].bg = CUI_C(ui, SURFACE); ui->nodes[ib].dir = CUI_STACK; ui->nodes[ib].align = CUI_ALIGN_CENTER; ui->nodes[ib].justify = CUI_JUSTIFY_CENTER;
+        cui__open(ui, ib);
+        cui__icon_node(ui, CUI_ICON_FILE_TEXT, 14, CUI_C(ui, TEXT_SECONDARY));
+        cui__close(ui);
+        int t = cui__text_node(ui, o->attachments[k], -1, CUI_FONT_MEDIUM, cui__fs(ui, ui->theme.text_xs + 0.5f), CUI_C(ui, FOREGROUND), false);
+        ui->nodes[t].line_height = 1.3f; ui->nodes[t].max_w = 160;
+        cui_button_opts xo;
+        memset(&xo, 0, sizeof xo);
+        xo.variant = CUI_BUTTON_GHOST; xo.size = CUI_SIZE_SM; xo.tooltip = "Remove";
+        cui_push_id_int(ui, k);
+        if (cui_icon_button_ex(ui, CUI_ICON_X, &xo)) { *result |= CUI_COMPOSER_REMOVE; if (o->removed) *o->removed = k; }
+        cui_pop_id(ui);
+        ui->nodes[ui->last_node].w = CUI_PX(22); ui->nodes[ui->last_node].h = CUI_PX(22);
         cui__close(ui);
     }
-    /* the text grows with its lines */
-    float size = cui__fs(ui, ui->theme.text_body);
-    float line_h = size * 1.5f;
-    cui_rect fr = cui__prev_rect(ui, fid ^ 0xED17u);
-    int lines = 1;
-    if (fr.w > 0) {
-        cui_text_layout_line *wl = NULL;
-        lines = cui__edit_lines(ui, CUI_FONT_BODY, size, buf, (int)strlen(buf), fr.w, &wl);
-    }
-    int maxl = o->max_lines > 0 ? o->max_lines : 8;
-    lines = CUI_CLAMP(lines, 1, maxl);
-    cui_input_opts io;
-    memset(&io, 0, sizeof io);
-    io.placeholder = o->placeholder ? o->placeholder : "Ask anything";
-    io.height = lines * line_h + 12;
-    io.width = CUI_FILL;
-    cui__text_field(ui, fid, buf, cap, &io, true, 1, NULL);
-    /* toolbar */
-    int bar = cui__node_new(ui, 0);
-    ui->nodes[bar].dir = CUI_ROW; ui->nodes[bar].align = CUI_ALIGN_CENTER; ui->nodes[bar].gap = 6; ui->nodes[bar].w = CUI_FILL;
-    cui__open(ui, bar);
-    cui_button_opts bo;
-    memset(&bo, 0, sizeof bo);
-    bo.variant = CUI_BUTTON_OUTLINE; bo.size = CUI_SIZE_SM; bo.tooltip = "Attach files";
-    if (cui_icon_button_ex(ui, CUI_ICON_PLUS, &bo)) result |= CUI_COMPOSER_ATTACH;
-    ui->nodes[ui->last_node].radius = CUI_CORNERS(ui->theme.radius_surface - 10);   /* concentric with the composer (pad 10) */
-    if (o->models && o->model_count > 0) {
-        cui_model_picker_opts mo;
-        memset(&mo, 0, sizeof mo);
-        mo.ghost = true;
-        if (cui_model_picker_ex(ui, "model", o->models, o->model_count, o->model, &mo)) result |= CUI_COMPOSER_MODEL;
-    }
-    cui_spacer(ui);
-    /* send / stop */
-    cui_id sid = id ^ 0x5E7Du;
-    bool can = o->busy || !empty;
+    cui__close(ui);
+}
+
+/* the round send button; it turns into stop while busy */
+static bool cui__composer_send(cui_ctx *ui, cui__cmp_state *st, cui_id sid, bool can, bool busy) {
     cui_interact sr = cui__interact(ui, sid, CUI_IF_FOCUSABLE);
-    if ((sr.clicked || sr.keyboard_activate) && can) result |= o->busy ? CUI_COMPOSER_STOP : CUI_COMPOSER_SEND;
+    bool hit = (sr.clicked || sr.keyboard_activate) && can;
     if (st->send.x <= 0) st->send.x = 1;
     cui__spring(ui, &st->send, sr.pressed ? 0.88f : 1.0f, CUI_SPRING_SNAPPY);
     int sb = cui__node_new(ui, sid);
@@ -956,7 +898,7 @@ int cui_chat_composer_ex(cui_ctx *ui, const char *id_str, char *buf, size_t cap,
     cui__mark_interactive(ui, sb, CUI_IF_FOCUSABLE);
     if (sr.hovered && can) cui__set_cursor(ui, CUI_CURSOR_HAND);
     cui__open(ui, sb);
-    if (o->busy) {
+    if (busy) {
         int sq = cui__leaf(ui, 0, CUI_PX(10), CUI_PX(10));
         ui->nodes[sq].radius = CUI_CORNERS(2.5f);
         ui->nodes[sq].bg = on_fg;
@@ -964,16 +906,139 @@ int cui_chat_composer_ex(cui_ctx *ui, const char *id_str, char *buf, size_t cap,
     cui__close(ui);
     cui__focus_ring(ui, sb, sr.focus_visible ? 1.0f : 0.0f);
     ui->last_id = sid;
-    cui_tooltip(ui, o->busy ? "Stop" : "Send");
+    cui_tooltip(ui, busy ? "Stop" : "Send");
+    return hit;
+}
+
+/* the text and its toolbar: attach, the model picker, the microphone and send */
+static void cui__composer_editor(cui_ctx *ui, const cui__cmp_ids *ids, cui__cmp_state *st, char *buf, size_t cap,
+                                 const cui_composer_opts *o, float input_h, bool empty, int *result) {
+    cui_input_opts io;
+    memset(&io, 0, sizeof io);
+    io.placeholder = o->placeholder ? o->placeholder : "Ask anything";
+    io.height = input_h;
+    io.width = CUI_FILL;
+    cui__text_field(ui, ids->fid, buf, cap, &io, true, 1, NULL);
+    int bar = cui__node_new(ui, 0);
+    ui->nodes[bar].dir = CUI_ROW; ui->nodes[bar].align = CUI_ALIGN_CENTER; ui->nodes[bar].gap = 6; ui->nodes[bar].w = CUI_FILL;
+    cui__open(ui, bar);
+    cui_button_opts bo;
+    memset(&bo, 0, sizeof bo);
+    bo.variant = CUI_BUTTON_OUTLINE; bo.size = CUI_SIZE_SM; bo.tooltip = "Attach files";
+    if (cui_icon_button_ex(ui, CUI_ICON_PLUS, &bo)) *result |= CUI_COMPOSER_ATTACH;
+    ui->nodes[ui->last_node].radius = CUI_CORNERS(ui->theme.radius_surface - 10);   /* concentric with the composer (pad 10) */
+    if (o->models && o->model_count > 0) {
+        cui_model_picker_opts mo;
+        memset(&mo, 0, sizeof mo);
+        mo.ghost = true;
+        if (cui_model_picker_ex(ui, "model", o->models, o->model_count, o->model, &mo)) *result |= CUI_COMPOSER_MODEL;
+    }
+    cui_spacer(ui);
+    if (o->mic) {
+        cui_button_opts mo;
+        memset(&mo, 0, sizeof mo);
+        mo.variant = CUI_BUTTON_GHOST; mo.size = CUI_SIZE_SM; mo.tooltip = "Record a voice message";
+        if (cui__icon_button_id(ui, ids->mic, CUI_ICON_MIC, &mo)) *result |= CUI_COMPOSER_RECORD;
+        ui->nodes[ui->last_node].radius = CUI_CORNERS(ui->theme.radius_surface - 10);
+    }
+    bool can = o->busy || !empty;
+    if (cui__composer_send(ui, st, ids->sid, can, o->busy)) *result |= o->busy ? CUI_COMPOSER_STOP : CUI_COMPOSER_SEND;
     cui__close(ui);
+}
+
+/* recording: one row as tall as the text and toolbar it stands in for, so nothing
+ * around the composer moves. Cancel, the recording dot and time, the mic levels
+ * scrolling by, and send. */
+static void cui__composer_recorder(cui_ctx *ui, const cui__cmp_ids *ids, cui__cmp_state *st, const cui_composer_opts *o,
+                                   float height, int *result) {
+    int row = cui__node_new(ui, 0);
+    cui_node *rn = &ui->nodes[row];
+    rn->dir = CUI_ROW; rn->align = CUI_ALIGN_CENTER; rn->gap = 10; rn->w = CUI_FILL; rn->h = CUI_PX(height);
+    cui__open(ui, row);
+    cui_button_opts bo;
+    memset(&bo, 0, sizeof bo);
+    bo.variant = CUI_BUTTON_OUTLINE; bo.size = CUI_SIZE_SM; bo.tooltip = "Cancel";
+    if (cui__icon_button_id(ui, ids->cancel, CUI_ICON_X, &bo)) *result |= CUI_COMPOSER_CANCEL;
+    ui->nodes[ui->last_node].radius = CUI_CORNERS(ui->theme.radius_surface - 10);
+    /* the dot blinks slowly, the one motion here that no level drives; it holds still under reduced motion */
+    float blink = 1;
+    if (ui->theme.motion > 0) {
+        blink = 0.675f + 0.325f * cosf((float)fmod(ui->time, 1.2) * (2 * CUI_PI / 1.2f));
+        cui__wakeup_after(ui, 1.0f / 30.0f);
+    }
+    int dot = cui__leaf(ui, 0, CUI_PX(8), CUI_PX(8));
+    ui->nodes[dot].radius = CUI_CORNERS(4); ui->nodes[dot].bg = CUI_C(ui, DANGER); ui->nodes[dot].opacity = blink;
+    int t = cui__text_node(ui, cui__mmss(ui, o->record_seconds), -1, CUI_FONT_BODY, cui__fs(ui, ui->theme.text_sm), CUI_C(ui, TEXT_SECONDARY), false);
+    ui->nodes[t].flags |= CUI_NF_TABULAR | CUI_NF_KEEP_W; ui->nodes[t].min_w = 30;
+    cui__keep_ltr(ui, t);
+    cui_voice_wave_opts wo;
+    memset(&wo, 0, sizeof wo);
+    cui_voice_wave_ex(ui, "levels", o->levels, o->level_count, &wo);
+    if (cui__composer_send(ui, st, ids->sid, true, false)) *result |= CUI_COMPOSER_VOICE;
+    cui__close(ui);
+}
+
+int cui_chat_composer_ex(cui_ctx *ui, const char *id_str, char *buf, size_t cap, const cui_composer_opts *o) {
+    cui_composer_opts d;
+    memset(&d, 0, sizeof d);
+    if (!o) o = &d;
+    if (!buf || cap == 0) return 0;
+    int result = 0;
+    cui__cmp_ids ids;
+    ids.id = cui_make_id(ui, id_str);
+    ids.fid = ids.id ^ 0xF1E1Du; ids.sid = ids.id ^ 0x5E7Du; ids.mic = ids.id ^ 0x41C0u; ids.cancel = ids.id ^ 0xCA9Cu;
+    cui__cmp_state *st = cui_state(ui, ids.id, sizeof *st);
+    bool recording = o->recording;
+    /* the keyboard follows the switch: from the microphone or the text to send, and back */
+    if (recording && !st->was_recording && (ui->focus == ids.mic || ui->focus == ids.fid)) ui->focus = ids.sid;
+    if (!recording && st->was_recording && (ui->focus == ids.cancel || ui->focus == ids.sid)) ui->focus = o->mic ? ids.mic : ids.fid;
+    st->was_recording = recording;
+    if (recording && (ui->focus == ids.cancel || ui->focus == ids.sid) && cui_key_pressed(ui, CUI_KEY_ESCAPE)) {
+        ui->kpressed[CUI_KEY_ESCAPE] = 0;
+        result |= CUI_COMPOSER_CANCEL;
+    }
+    bool empty = true;
+    for (const char *c = buf; *c; c++) if (*c != ' ' && *c != '\n' && *c != '\t') { empty = false; break; }
+    /* Enter sends; Shift+Enter is a new line */
+    if (ui->focus == ids.fid && cui_key_pressed(ui, CUI_KEY_ENTER) && !(ui->mods & (CUI_MOD_SHIFT | CUI_MOD_CTRL | CUI_MOD_SUPER))) {
+        ui->kpressed[CUI_KEY_ENTER] = 0;
+        if (!empty && !o->busy) result |= CUI_COMPOSER_SEND;
+    }
+    cui__tween(ui, &st->focus, ui->focus == ids.fid ? 1.0f : 0.0f, CUI__T_FOCUS);
+    int box = cui__node_new(ui, ids.id);
+    cui_node *bn = &ui->nodes[box];
+    bn->w = o->width.kind ? o->width : CUI_FILL; bn->gap = 4;
+    bn->pad[0] = 10; bn->pad[1] = bn->pad[3] = 10; bn->pad[2] = 10;
+    bn->radius = CUI_CORNERS(ui->theme.radius_surface);
+    bn->bg = ui->mode == CUI_THEME_DARK ? cui_mix(CUI_C(ui, SURFACE), CUI_C(ui, FOREGROUND), 0.04f) : CUI_C(ui, SURFACE);
+    bn->border = 1;
+    bn->border_color = cui_mix(CUI_C(ui, BORDER), CUI_C(ui, BORDER_STRONG), st->focus);
+    bn->elevation = CUI_ELEVATION_RAISED; bn->elevation_alpha = 0.6f + 0.4f * st->focus;
+    cui__open(ui, box);
+    cui_push_id(ui, id_str);
+    if (o->attachment_count > 0 && o->attachments) cui__composer_attachments(ui, o, &result);
+    /* the text grows with its lines */
+    float size = cui__fs(ui, ui->theme.text_body);
+    float line_h = size * 1.5f;
+    cui_rect fr = cui__prev_rect(ui, ids.fid ^ 0xED17u);
+    int lines = 1;
+    if (fr.w > 0) {
+        cui_text_layout_line *wl = NULL;
+        lines = cui__edit_lines(ui, CUI_FONT_BODY, size, buf, (int)strlen(buf), fr.w, &wl);
+    }
+    int maxl = o->max_lines > 0 ? o->max_lines : 8;
+    lines = CUI_CLAMP(lines, 1, maxl);
+    float input_h = lines * line_h + 12;
+    if (recording) cui__composer_recorder(ui, &ids, st, o, input_h + 4 + 32, &result);   /* the box's gap, then the toolbar, as tall as send */
+    else cui__composer_editor(ui, &ids, st, buf, cap, o, input_h, empty, &result);
     cui_pop_id(ui);
     cui__close(ui);
-    ui->last_id = id;
+    ui->last_id = ids.id;
     return result;
 }
 
 /* ------------------------------------------------------------------------ */
-/* Voice orb                                                                */
+/* Voice orb (deprecated: the voice components in cui_voice.c replace it)   */
 /* ------------------------------------------------------------------------ */
 
 typedef struct { cui_spring level, scale; float state_t[4]; bool init; } cui__orb_state;
@@ -1037,6 +1102,7 @@ bool cui_voice_orb_ex(cui_ctx *ui, const char *id_str, cui_voice_state state, fl
     cui_voice_orb_opts d;
     memset(&d, 0, sizeof d);
     if (!o) o = &d;
+    if ((unsigned)state > CUI_VOICE_SPEAKING) state = CUI_VOICE_IDLE;   /* the orb has no muted look */
     cui_id id = cui_make_id(ui, id_str);
     cui_interact r = cui__interact(ui, id, CUI_IF_FOCUSABLE);
     cui__orb_state *st = cui_state(ui, id, sizeof *st);

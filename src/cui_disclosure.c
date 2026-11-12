@@ -48,6 +48,7 @@ void cui_hover_card_end(cui_ctx *ui) { cui__popup_end(ui); }
 /* Confirm popover                                                          */
 /* ------------------------------------------------------------------------ */
 
+/** Require a fresh Enter when an activation opens the question in this frame. */
 bool cui_confirm_popover_ex(cui_ctx *ui, const char *id, const cui_confirm_popover_opts *o) {
     cui_confirm_popover_opts d;
     memset(&d, 0, sizeof d);
@@ -62,6 +63,7 @@ bool cui_confirm_popover_ex(cui_ctx *ui, const char *id, const cui_confirm_popov
     po.pad = 16;
     po.gap = 6;
     if (!cui_popover_begin(ui, id, &po)) return false;
+    if (p && p->opened_frame == ui->frame) ui->kpressed[CUI_KEY_ENTER] = 0;
     bool confirmed = false;
     if (o->title) {
         int t = cui__text_node(ui, o->title, -1, CUI_FONT_MEDIUM, cui__fs(ui, ui->theme.text_body), CUI_C(ui, FOREGROUND), true);

@@ -937,6 +937,7 @@ void cui_node_end(cui_ctx *ui) {
     nd->id = b->node_id; nd->x = b->nx; nd->y = b->ny; nd->w = b->nw; nd->h = h;
     cui__close(ui);
     b->in_node = false;
+    ui->last_node = b->card_node;   /* the card is the previous component, for a selection ring */
     ui->last_id = b->card_id;
 }
 

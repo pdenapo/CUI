@@ -2,6 +2,133 @@
 
 What changed in CUI, newest first. Every component mentioned here runs live in the docs.
 
+## Unreleased
+
+### Added
+
+- `cui_set_clipboard_text` and `cui_get_clipboard_text`: copy from a menu item or a status bar ("Copy path") and read the clipboard for a Paste item, through the same platform hooks the copy button and text fields use ([#32](https://github.com/yappologistic/CUI/issues/32)).
+- `cui_app_follow_system_theme(app, follow)` starts or stops following the system's light or dark setting while the app runs, for a theme switcher with Light, Dark and System. Stopping keeps the current theme, so a `cui_set_theme` after it lasts (on macOS the system setting used to undo it every frame); starting applies the system setting at once ([#34](https://github.com/yappologistic/CUI/issues/34)).
+- **Creative controls**, eight components for editors, generators and design tools; six of them sit in a control well, a rounded panel with a label, a value and the control. See [Creative controls](docs/components-more.md#creative-controls) and the gallery's new *Creative controls* page.
+  - **Status tag** (`cui_status_tag`): an icon, a label and a tinted fill for pending, in progress (a slowly turning dashed ring), submitted, in review, success, failed and expired, or your own icon and tone. A small size, and an optional remove x.
+  - **Ratio slider** (`cui_ratio_slider`): a whole split into two named parts with a bar to drag; the names and percentages stay readable at any split. Arrow keys, Shift for steps of ten, Home and End.
+  - **Gradient slider** (`cui_gradient_slider`): the track is the value, a hue wheel, a white balance, an opacity over a checkerboard or your own stops, and the thumb is filled with the color under it. An optional tool button.
+  - **Step slider** (`cui_step_slider`): a few stops marked with dots; the thumb snaps to each and glides between them. Optional names for the stops and an action button.
+  - **Palette strip** (`cui_palette_strip`): joined swatches you lock with a click, and a shuffle that recolors the rest from a seed you keep, so the same seed gives the same palettes. The swatch under the pointer widens and shows its hex code.
+  - **Aspect ratio picker** (`cui_aspect_picker`): each ratio drawn in its own proportions, a photo set or your own, an optional dashed Custom, and the size in pixels.
+  - **Option field with action** (`cui_option_action`): a compact segmented choice and the icon button of the action it feeds.
+  - **Seed field** (`cui_seed_field`): a seed in the monospaced font; the dice rolls a new one with rolling digits, and the lock keeps it.
+- **Canvas and bars**, six components for editors with a canvas:
+  - **Grouped toolbar** (`cui_toolbar`): `.style = CUI_TOOLBAR_GROUPED` puts items in raised groups (`cui_toolbar_group`) inside one pill, with an inset radio set (`cui_toolbar_radio`) and a filled primary action (`cui_toolbar_primary`); `CUI_TOOLBAR_FLOATING` is one bordered pill for bars over content. Both keep the toolbar's keys and overflow menu, and every style gains cycle pickers (`cui_toolbar_cycle`), colored buttons (`.tone`) and a corner mark for buttons that open a flyout (`.flyout`, `cui_flyout_mark`).
+  - **Format bar** (`cui_format_bar`): one call edits a `cui_text_format`: a color grid, bold, underline, link, a text style menu that previews each style at its size, alignment and list flyouts, and delete behind a small confirmation. Menu items take a `font` and `text_size` for such previews.
+  - **Live cursors** (`cui_live_cursors`): other people's pointers over a canvas with name flags and chat bubbles, gliding to each new position at any frame rate; `cui_presence_pill` shows who is here and who is speaking, and `cui_selection_ring` marks what someone has selected.
+  - **Canvas controls** (`cui_canvas_controls`): a floating zoom rail (in, a percentage that resets to 100%, out, fit and toggles of your own) that drives the node editor's `cui_node_view`, stepping through zoom presets and keeping the middle in place.
+  - **Result card** (`cui_result_card`): a picture cropped to rounded corners with a status chip and a title and caption on a fade; its actions go in a floating toolbar under it.
+  - **Selection bar** (`cui_selection_bar`): a bar that slides up under a list while something is selected, with the count, a clear button and labeled actions, and returns the action picked; Esc clears the selection.
+- **Voice components**, built on one dot waveform that only moves with real audio:
+  - **Voice waveform** (`cui_voice_wave`): a voice drawn as fine dots, 13 rows mirrored around a center line, each dot as bright as the level covers it. It scrolls as you push levels, or shows a whole clip with its played part in the accent, a playhead and seeking by click, drag or arrow keys. Silence draws only a faint center line, and two voices can share one timeline. `cui_voice_resample` keeps a short waveform for a message. See [Voice](docs/components-more.md#voice) and the gallery's new *Voice* page.
+  - **Voice recorder** in the chat composer: `.mic` adds a microphone button, and while the app sets `.recording` the composer shows a recording dot, the time, the mic levels scrolling by, Cancel and Send, at the same height, returning `CUI_COMPOSER_RECORD`, `CUI_COMPOSER_CANCEL` and `CUI_COMPOSER_VOICE`.
+  - **Voice note** (`cui_voice_note`): a recorded message in a bubble with play and pause, its waveform as the seek bar, played and total time, and a 1x, 1.5x and 2x speed chip (`CUI_PLAYER_SPEED`). `.mine` tints it with the accent. The app plays the audio and passes the position.
+  - **Voice session** (`cui_voice_session`): a spoken conversation with an assistant on one scrolling timeline, you in the foreground and the assistant in the accent, with a state label (Listening, Thinking, Speaking, Muted: `CUI_VOICE_MUTED` is new), a legend, the live transcript with the unspoken part dimmed, and Mute and End buttons.
+
+### Changed
+
+- **A calmer series palette.** The six chart colors keep their order (blue, orange, aqua, violet, yellow, magenta), so neighbours stay apart under color blindness, but now share one lightness and about one chroma in each mode. No series shouts over another or over the rest of the interface, and the light colors keep 4.2:1 or more on white.
+- **Bar, donut and line charts** step back so the data leads: faint dashed gridlines over a solid zero line, smaller muted axis labels, slimmer bars with a small gap inside a group, and on hover a soft band behind the column with a compact chip of its values. The donut ring is thinner, its segments are parted by real gaps, and each legend row has a thin bar showing its share.
+- **Heatmap and calendar heatmap** count in five steps from the empty surface up to the accent (a gray ramp under the neutral accent), so zero reads as empty and the steps read at a glance. Heatmap cells are smaller with real gaps, a Less to More key replaces the gradient scale, and hovering a cell rings it and lights its row and column labels.
+- **Radial gauge** drops the needle and the tick ring for three calmer styles, with the value as the hero: a segmented arc lit in the band colors only up to the value, a clean arc with round caps, its ends labelled and a target marker, and a slim ring with a line of detail. New options: `style` (`CUI_GAUGE_AUTO` picks the segments when there are `bands`, the arc otherwise), `detail` and `color`, and a band `name` shown as a chip while the value is in that band. The default sweep is now 270 degrees.
+- **Treemap and radar.** Treemap tiles are neutral, graded by size, with 3 point gaps, a label, a value and a share figure, and only the hovered or selected tile in the accent; small tiles keep a compact value. New `selected` option: a click selects a tile and a second click clears it. The radar has hairline rings, light fills under crisp outlines, points only on the series you point at (the last one otherwise) with a chip of the hovered value, and ring values kept off the lines.
+- **Sankey** nodes are slim (6 points) and colored by meaning, with the new `node_colors` option and the palette or neutral gray for the rest. Flows fade from their source's color to their target's, hovering a node or a flow lights its whole path upstream and downstream, and labels sit beside the nodes as the name over the value and share, with no plates over the flows.
+- **Gantt chart** bars are colored by state (done, active, planned) with their progress inside and a percentage at the end; planned bars are dashed and tinted. A new `state` field on `cui_gantt_task` sets it, and its zero value works it out from the progress and `today`. Dependencies are soft curves with small arrowheads, today is an accent line with a "Today" chip, weekends are faintly shaded, and a milestone is an outlined diamond with its name and date.
+- **Uptime bars**: healthy days are a slightly softer green, so incidents stand out more.
+- The voice orb (`cui_voice_orb`) is deprecated in favor of the voice components. It keeps working, but it has left the gallery and the docs site.
+
+### Fixed
+
+- A confirmation popover opened with Enter waits for a separate activation.
+- After Escape leaves a text field in a dialog, the next Escape can close the dialog.
+- A disabled password field's reveal button ignores clicks and is skipped by Tab.
+- Timed toasts expire on schedule after idle, and their actions stop accepting input once dismissal begins.
+- The first tooltip waits for a full hover, and an idle window shows it at the requested wakeup.
+- Each arrow press in a toggle group moves focus by one item.
+- The range slider supports adjusting either thumb with the keyboard and shows which thumb has focus.
+- Breadcrumb links and numbered page buttons show a focus ring when reached by keyboard.
+- Pagination uses its parent's inner width to choose the compact layout, including in unnamed boxes.
+- Steppers with repeated captions adapt independently to the width of their own rows.
+- macOS: Quit from the app menu (Cmd-Q), the Dock or AppleScript ended the process from inside the event loop, so nothing after `cui_app_run` ran: no cleanup, no saving, and libraries that check their resources at exit could crash. It now ends `cui_app_run` (or makes `cui_app_frame` return false) as closing the window does, at once even when the app is idle ([#29](https://github.com/yappologistic/CUI/issues/29)).
+- Nav items: when no item of a group was selected, the highlight stayed on the item selected before, and the next selection glided over from there. The highlight now goes away, and the next selection appears in place ([#35](https://github.com/yappologistic/CUI/issues/35)).
+
+## 2026-11-11 · 1.4: instruments
+
+Five components that read like an instrument, a new example that puts them together, three guides and a reference of every function. Linux desktops can now match a window to its app, and fixes cover the single file after `windows.h` and the keyboard in three components.
+
+### Added
+
+- **Instruments**, five components for interfaces that read like an instrument: values as dots, labels in the monospaced font, hairlines and one accent. See [Instruments](docs/components-more.md#instruments) and the gallery's new *Instruments* page.
+  - **Dot-matrix chart** (`cui_dot_chart`): values as a grid of dots, lit up to each column's value and dim above it. Series stack, an accent series stands out, the pointer or the arrow keys show a readout, and a click returns where it landed.
+  - **Chart annotations** (`cui_chart_annotation`): vertical lines, dashed thresholds and labelled points over the dot chart, the line chart and the bar chart. Labels that would overlap move to the other side of their line, then down.
+  - **Event track** (`cui_event_track`): moments on a time axis as dots you drag, add with a click and remove with a double-click, snapped to a step, with full keyboard control. It lines up with a dot chart above it.
+  - **Readout** (`cui_readout`): a label, a value with its unit on the value's baseline, and a line of context.
+  - **Dot-matrix display** (`cui_dot_display`): text in a 5 by 7 dot font that shrinks to fit or scrolls.
+  - In a right-to-left interface the readout and the display's placement follow the reading direction, the chart and the track keep time running left to right, and Persian or Arabic labels are shaped with `CUI_TEXT_SHAPING`.
+- `cui_axis_units`: `CUI_AXIS_HOURS` labels an axis as times of day, with 30 reading 06:00 the next morning.
+- **Caffeine**, a new example ([`examples/caffeine.c`](examples/caffeine.c)) that puts the instruments on one screen: how much caffeine is still in you at bedtime, with cups you drag. It runs on the site and ships in the release downloads.
+- **Three new guides.** [Building an app](docs/apps.md) covers the window, when frames happen, what components return, work on other threads and shipping. [Recipes](docs/recipes.md) has six complete programs: a form that validates, a table sorted by its headers, a list with a detail pane, a long task on another thread, a clock, and settings that are remembered. [Questions](docs/faq.md) says what CUI is and is not, how it compares with other libraries, and what it cannot do.
+- **A function reference.** The site has a page that lists every public function of `cui.h`, `cui_app.h` and `cui_render.h` (496 of them) under the headers' own sections: its signature, the comment written beside it, and a link to the component page or guide that explains it. It has a filter, and site search finds a function by name.
+- **Complete programs on component pages.** A page's usage block is a fragment. 71 of the 147 pages now also have the example as a whole program, with its includes, a frame function and `main`, under "Complete program". The site build compiles each one and leaves out any that does not build.
+- `cui_app_quit`, `cui_app_set_title`, `cui_app_set_size`, `cui_app_size`, `cui_app_ui`, `cui_app_is_software` and `cui_app_native_window` take `NULL` for the app that is running, as `cui_app_file_dialog` already did. A `cui_app_run` callback had no way to close its window or change its title: now it is `cui_app_quit(NULL)`.
+- `tests/doc_programs.sh`, run on every push: it builds every complete program in the docs with warnings as errors.
+- `cui_app_desc.app_id` lets a Linux desktop show your app's name and icon for its window in the taskbar, the dock and Alt+Tab. Name your `.desktop` file after the ID (for example `org.example.Notes.desktop`). It sets `WM_CLASS` on X11, and the Wayland app ID with SDL2 or GLFW 3.4. Before this, every window of the X11 backend had the class `CUI`. See [Your app's name and icon on Linux](docs/getting-started.md#your-apps-name-and-icon-on-linux).
+
+### Changed
+
+- **Every component has a description.** Each section of the component docs now opens with one sentence that says what the component is and what it is for. The site shows it under the page title, on the cards that link to the page and in search results, where it used to show whatever sentence came first ("Weeks start on Monday." for the date picker).
+- **Site search reads the whole site.** It now searches the text of the guides, the options and struct fields of every component and the changelog, and shows the words around a match. It used to look at titles and summaries only, so "install", "find_package" or the name of an option found nothing.
+- **Every page has its own address for search engines.** The site was one page as far as a search engine could tell, so nobody searching for "C date picker" could land on the date picker. The build now writes a page per component and per guide (`c/date-picker-and-calendar/`, `guide/tutorial/`) with its text, title and description, plus `sitemap.xml` and `robots.txt`. Opened in a browser, such a page becomes the live site at that page.
+- **Links to the site show a preview.** Every page carries a title, a description and an image for the cards that chat apps and social sites draw; a component's card shows the component.
+- The site shows the version it documents beside the name.
+- **Fuller component pages.** Sections that showed a snippet and a sentence now say what the call returns and when, which variables are yours and what the library writes into them, and the limits people run into, each checked against the code.
+- **Every option is described.** All 1,277 fields of the options and data structs on the component pages now have a description: comments added in `cui.h` for the 395 that had none (checked against the code), and a shared description for fields that mean the same everywhere, such as `width` or `disabled`. A field whose type is an enum lists its values.
+- **A new README.** It opens with what CUI is in plain words, says what it is not (it draws its own components and does not wrap the system's), compares it with the libraries people know, and lists the limitations in full, including the eight components that still need a pointer. It also says how the code is written and what tests it.
+- A component page lists only its own functions, and no longer repeats its option names in a sentence above the options table.
+- Release notes link to the files they mention with full addresses, so the links work from the release page.
+- **The shared library's name carries the minor version** (`libcui.so.1.4` instead of `libcui.so.1`). Option and description structs gain fields in minor releases, and an app built against older headers passes the library a smaller struct than it reads. With the old name, an app built against 1.3 could load a newer library and read garbage past the end of `cui_app_desc` (the new `app_id`). Now each minor version is its own library, and an app keeps the one it was built against. Rebuild against the new headers to move to a new minor version. Static builds and the single-file version are not affected.
+
+### Fixed
+
+- The path bar's "..." menu had the same fault as the split button: after opening it from the keyboard, Enter on the highlighted segment closed the menu without choosing it. Its docs now list its keys.
+- The split button's Enter key chooses the highlighted menu action when the chevron has keyboard focus. It previously closed the menu without choosing an action ([#25](https://github.com/yappologistic/CUI/issues/25)).
+- The copy button keeps keyboard focus while it shows the confirmation check, so Enter or Space can copy again without pressing Tab ([#23](https://github.com/yappologistic/CUI/issues/23)).
+- The single-file distribution failed to compile after `#include <windows.h>` with the Microsoft SDK, which defines `small` as a macro; two variables had that name ([#17](https://github.com/yappologistic/CUI/issues/17)). CI now compiles it with the macros a full `windows.h` defines.
+- The values of an enum on a component page's "Data and results" section showed as `[object HTMLElement]` (17 pages).
+- Eight component pages said things their component does not do: the icon button's icon swap (it animates on `cui_button`, not on `cui_icon_button`), a tooltip placed after a badge, a hover card on an avatar, Tab inside the time picker and the color picker, and the keys of the onboarding checklist, comments and JSON viewer. The pages now say what the code does, and the README lists the time picker and color picker among the parts that still need a pointer.
+
+## 2026-11-09 · 1.3.1: first steps, a tutorial and ready-to-run examples
+
+A release for people starting out. Every step of the getting-started guide was followed as written, and what did not work is fixed.
+
+### Added
+
+- **Tutorial**: [build a to-do app](docs/tutorial.md) in about 130 lines, step by step: your data as the state, a list that grows, ids for repeated rows, a filter, a dialog and saving to a file. The finished app is `examples/todo.c`, and a test types into it and checks that it does what the tutorial says.
+- **Ready-to-run examples**: each release now attaches the example apps built for Windows, macOS and Linux, so you can try them without a compiler.
+- `cui_app_target(my_app)` for CMake projects. It gives a window app no console on Windows and keeps `int main(void)` as the entry point, and in release builds it links only the library code the app calls. A first window is about 250 KB with it and about 470 KB without.
+- **Component pages on the site list their data.** Under the options, each page now shows the structs you fill in and the structs you get back, with their fields and the values of their enums (105 tables on 63 pages).
+- **Every component page says what the keyboard does.** 119 pages list their keys, 20 are marked as display only, and 8 say plainly that they still need a pointer: the rating, the histogram slider's handles, swipe actions, the reorderable list, the JSON viewer, the agent plan's steps, blame and the time histogram.
+- [From C++](docs/integration.md#from-c): how to call CUI from C++, with an example the tests compile.
+- `tests/first_steps.sh`, run on every push: it takes the code and the commands out of the getting-started guide and runs them, without CMake, as one file, with CMake and from an installed copy.
+
+### Changed
+
+- **Metric cards** put the change under the value when the card is too narrow for both, instead of cutting both short.
+- The install snippets name a release (`GIT_TAG v1.3.1`), so a build does not change under you.
+- The docs say what "native" means here: compiled code with no browser or runtime, drawing its own components. They also say how to get the small sizes they quote.
+
+### Fixed
+
+- An installed CUI could not be used through `find_package(cui)`: the package did not look for the thread library it links.
+- The getting-started guide's "Without CMake" command left out `src/platform/cui_dialogs.c` and did not link.
+- With the single-file distribution, the guide's first window did not compile: it needs `#include "cui.h"`, which the guide now says. The guide's one-line build also gave a 1.6 MB program; it now shows the two commands that give about 265 KB.
+- The Windows link line in the guide and in `cui.pc` lacked `comdlg32` and `ole32`.
+
 ## 2026-11-09 · 1.3: developer tools
 
 ### Added

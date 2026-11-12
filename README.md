@@ -7,21 +7,17 @@
 
 # CUI
 
-**Native UI components for C.**
-
-About 190 components with spring motion and full keyboard support.<br>
-Windows, macOS and Linux from one C99 codebase. No dependencies, about 240 KB.
+**A UI library for C that draws its own components.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/yappologistic/CUI/ci.yml?branch=master&label=CI&style=flat-square&labelColor=24292f)](https://github.com/yappologistic/CUI/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/yappologistic/CUI?style=flat-square&labelColor=24292f&color=57606a)](https://github.com/yappologistic/CUI/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-57606a.svg?style=flat-square&labelColor=24292f&color=57606a)](LICENSE)
-![C99](https://img.shields.io/badge/C-99-57606a.svg?style=flat-square&labelColor=24292f&color=57606a)
-![Platforms](https://img.shields.io/badge/platforms-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-57606a.svg?style=flat-square&labelColor=24292f&color=57606a)
 
+[Live site](https://yappologistic.github.io/CUI/) ·
 [Getting started](docs/getting-started.md) ·
+[Tutorial](docs/tutorial.md) ·
 [Components](docs/components.md) ·
-[Live docs](https://yappologistic.github.io/CUI/) ·
-[Examples](examples) ·
-[Design principles](docs/design.md)
+[Downloads](https://github.com/yappologistic/CUI/releases)
 
 <br>
 
@@ -30,14 +26,24 @@ Windows, macOS and Linux from one C99 codebase. No dependencies, about 240 KB.
   <img src="docs/images/showcase/components.png" alt="CUI components: a sign up form, metric cards, a calendar with time slots, a bar chart, team members and settings">
 </picture>
 
-<sub>Every image on this page is drawn by CUI itself, from plain C.</sub>
+<sub>Every image on this page is drawn by CUI, from plain C.</sub>
 
 </div>
 
-> [!TIP]
-> **Try it before you install it.** The [live docs](https://yappologistic.github.io/CUI/) run every component in your browser: the same C library, compiled to WebAssembly and drawn by a WebGL2 port of its renderer.
+CUI is an immediate-mode UI library written in C99. You describe the screen with function calls every frame. CUI lays it out, handles the mouse and keyboard, and draws it with OpenGL or its own software renderer, in a window on Windows, macOS or Linux, or in a browser through WebAssembly.
 
-## Your interface is plain C
+- **About 210 components**, from buttons and text fields to a data grid, charts, a code editor and docking panels.
+- **No dependencies.** One CMake target, or two files (`cui.h` and `cui.c`) dropped into your project.
+- **Small.** A complete app, window, fonts and all, is about 250 KB. There is no browser or runtime inside.
+- **MIT licensed.**
+
+## Try it first
+
+- **In your browser:** the [live site](https://yappologistic.github.io/CUI/) runs every component and the example apps. It is the same C code, compiled to WebAssembly.
+- **On your computer, without a compiler:** each [release](https://github.com/yappologistic/CUI/releases) has the example apps built for Windows, macOS and Linux.
+- **In code:** the [tutorial](docs/tutorial.md) builds a to-do app in about 130 lines.
+
+## A small program
 
 ```c
 #include <cui/cui.h>
@@ -74,67 +80,45 @@ int main(void) {
 <td width="40%" valign="middle"><img src="docs/images/showcase/hello-dark.png" alt="The hello example: a heading, a line of text, a switch and a button"></td>
 <td valign="middle">
 
-**Components are functions.** They draw themselves, handle input and return what happened.
+**A component is a function call.** It draws itself, handles input and returns what happened: `cui_button` returns true on the frame it is clicked.
 
-**Options are named arguments,** so the common case stays short and everything else is one `.field = value` away.
+**Options are named arguments.** Leave one out and it takes its default.
 
-**Your variables are the state.** The screen is described again every frame, so there is nothing to keep in sync.
-
-</td>
-</tr>
-</table>
-
-## Why CUI
-
-<table>
-<tr>
-<td width="50%" valign="top">
-
-**A complete library**
-
-Buttons, fields, pickers, dialogs and tables, plus a command palette, a virtualized data grid, kanban boards, gantt charts, a dozen kinds of chart, AI chat components, and tool panels such as docking, a node editor, a code editor, a terminal and a flame graph. They are designed together and look finished without styling.
-
-</td>
-<td width="50%" valign="top">
-
-**Small and fast**
-
-A full screen builds, lays out and paints in 0.1 to 0.25 ms. Idle apps use no CPU. A complete app is about 240 KB.
-
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-**Native everywhere**
-
-Win32, Cocoa and X11, or SDL2 and GLFW, drawn with OpenGL or a software renderer. The core only emits triangles, so your own renderer works too. Layouts mirror for Persian, Arabic and Hebrew with one setting.
-
-</td>
-<td valign="top">
-
-**Careful by default**
-
-Neutral surfaces, one accent, hairline borders, shadows only on things that float, and motion that explains what changed. Every component works from the keyboard and every animation has a reduced motion path. The [design principles](docs/design.md) list the rules.
+**Your variables are the state.** The screen is described again every frame, so there are no widgets to create, keep or update.
 
 </td>
 </tr>
 </table>
+
+## What it is, and what it is not
+
+CUI draws every component itself. It does not wrap the system's buttons and menus, so an app looks the same on every system and does not look like the system's own apps. "Native" here means compiled code in a real window, with nothing interpreted and no web view.
+
+How it sits beside the libraries you may know:
+
+- **Dear ImGui and Nuklear** are also immediate-mode. They are aimed mostly at tools and debug panels inside a program that already has a renderer. CUI uses the same model for the app itself: it opens the window, and its components come with the things end users expect, such as full text editing, animation, light and dark themes and right-to-left layouts.
+- **Qt, GTK and wxWidgets** keep a tree of widgets for you and are far more mature. They have screen reader support, complete input-method support and years of use behind them. If you need those today, use one of them.
+- **Electron and web views** ship a browser with your app. CUI ships about 250 KB.
+
+CUI is a good fit for a desktop tool, an editor, a dashboard or a game's interface written in C or C++, where you want it small and want it to look finished without designing every control. Read [Limitations](#limitations) before you decide.
 
 ## Install
 
-CUI uses CMake and builds with GCC, Clang, MSVC and MinGW. Add it to your project:
+With CMake (GCC, Clang, MSVC and MinGW are tested):
 
 ```cmake
 include(FetchContent)
 FetchContent_Declare(cui
     GIT_REPOSITORY https://github.com/yappologistic/CUI.git
-    GIT_TAG master)
+    GIT_TAG v1.4.0)
 FetchContent_MakeAvailable(cui)
 target_link_libraries(my_app PRIVATE cui::cui)
+cui_app_target(my_app)   # no console window on Windows, and only the code your app uses
 ```
 
-Or build it and run an example:
+Without CMake, take `cui.h` and `cui.c` from a [release](https://github.com/yappologistic/CUI/releases) and compile them with your program. [Getting started](docs/getting-started.md) has the exact commands for both, and CI runs those commands on every push.
+
+To build the library and run an example:
 
 ```sh
 git clone https://github.com/yappologistic/CUI.git
@@ -143,46 +127,33 @@ cmake --build build
 ./build/examples/tracker
 ```
 
-On Linux you need the X11 development headers (`libx11-dev`). Windows and macOS need nothing beyond the SDK. [Getting started](docs/getting-started.md) covers other build systems and backends.
+Linux needs the X11 development headers (`libx11-dev`). Windows and macOS need nothing beyond the system SDK.
 
-## Components
+## What is in it
 
 | Group | Components |
 |---|---|
-| **Actions** | button, icon button, button group, split button, toggle group, copy button, hold to confirm, segmented control, menus, command palette |
-| **App chrome** | menu bar, toolbar, status bar, document tabs, docking layout with saved layouts |
-| **Inputs** | text field, password, search, text area, number, money and scrub fields, tag input, one time code, select, combobox, multi-select, shortcut recorder |
-| **Pickers** | date and date range, time, wheel and dial pickers, calendar, color picker, emoji picker, ruler and histogram sliders, knob and fader |
-| **Selection** | checkbox, switch, radio group and cards, sliders, chips, rating |
-| **Navigation** | tabs, sidebar, breadcrumb, pagination, stepper, table of contents, dock, tab bar |
-| **Overlays** | dialog, sheet, popover, hover card, tooltip, toast stack, confirm popover, guided tour |
-| **Feedback** | alert, banner, progress bar and ring, meter, spinner, skeleton, badge, avatar, empty state, timeline |
-| **Data** | card, metric, table, virtualized data grid, tree table, path bar, list, tree, accordion, filter bar, file browser and open/save dialog |
-| **Code** | code block, code editor, diff viewer, markdown view, JSON viewer |
-| **Tool panels** | property inspector, log console, terminal, node editor, flame graph, hex viewer, curve and gradient editors, timeline editor, level meter |
-| **Developer tools** | trace viewer, network waterfall, dependency graph, commit graph, CI pipeline, problems panel, test explorer, stack trace, coverage, blame, regex tester, HTTP request bar, API explorer, key-value editor, query builder, cron schedule picker, feature flags, uptime bars, time histogram, keymap |
-| **Charts** | line, area, bar, donut, sparkline, gauge and radial gauge, candlestick, heatmap, treemap, radar, funnel, sankey, waffle, scatter and more |
-| **Media** | image viewer with zoom and pan, image cropper, image compare, carousel |
-| **Planning** | kanban board, week and month calendars, gantt chart with dependencies |
-| **AI** | reasoning, tool calls, agent plan, sources and citations, context meter, prompt suggestions, model picker, chat composer |
-| **Custom** | a canvas with a full 2D drawing API, per component state and spring animation helpers |
+| **Basics and actions** | text, buttons, icon buttons, split and toggle buttons, menus, command palette |
+| **Inputs** | text field, text area, number, money, tags, one time code, select, combobox, multi-select, shortcut recorder, dropzone |
+| **Selection and pickers** | checkbox, switch, radio, slider, chips, date and date range, time, color, emoji, knob and fader |
+| **Navigation and windows** | tabs, sidebar, breadcrumb, menu bar, toolbar, status bar, document tabs, docking panels |
+| **Overlays and feedback** | dialog, sheet, popover, tooltip, toast, alert, progress, skeleton, empty state, guided tour |
+| **Data** | table, data grid for very large data, tree, tree table, list, file browser with open and save dialogs |
+| **Code and text** | code block, code editor, diff viewer, markdown view, JSON viewer, terminal, log console, hex viewer |
+| **Charts** | line, bar, donut, sparkline, gauge, candlestick, heatmap, treemap, radar, funnel, sankey, scatter |
+| **Planning** | kanban board, week and month calendars, gantt chart, node editor |
+| **Developer tools** | trace viewer, network waterfall, flame graph, dependency and commit graphs, CI pipeline, test explorer, regex tester, query builder |
+| **Instruments** | dot-matrix chart, chart annotations, event track on a time axis, readout, dot-matrix display |
+| **Creative controls** | status tag, ratio slider, gradient and step sliders, palette strip, aspect ratio picker, seed field |
+| **Canvas and bars** | grouped and floating toolbars, format bar, live cursors, canvas zoom controls, result card, selection bar |
+| **Conversation and AI** | chat, comments, composer, reasoning and tool calls, agent plan, sources and citations, voice recorder, voice notes, voice session |
+| **Your own** | a canvas with a 2D drawing API, per-component state and spring animation |
 
-Every component is documented with a screenshot, usage, options and keyboard behaviour in [Components](docs/components.md) and [More components](docs/components-more.md).
+Every component has a page with a live example, its options, its data structures and what it does with the keyboard: on the [site](https://yappologistic.github.io/CUI/#/components), or in [Components](docs/components.md) and [More components](docs/components-more.md).
 
 <details>
-<summary><b>The extended set</b></summary>
+<summary><b>Pictures of the larger components</b></summary>
 <br>
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/showcase/components-pro-dark.png">
-  <img src="docs/images/showcase/components-pro.png" alt="Extended CUI components: an AI answer with tools, a contribution heatmap, a sankey diagram, an agent plan, control tiles, a player and a radar chart">
-</picture>
-
-Capture (dropzone with real file drops, avatar upload, signature pad), conversation (chat bubbles, comments, presence, rolling counter, ticker, carousel, image compare, card stack), motion (shimmer text, typewriter, word reveal, spotlight cards, loaders, waveform, now playing) and more, all in [More components](docs/components-more.md).
-
-</details>
-
-## Showcase
 
 <table>
 <tr>
@@ -244,9 +215,11 @@ Capture (dropzone with real file drops, avatar upload, signature pad), conversat
 
 </details>
 
+</details>
+
 ## Example apps
 
-Complete apps in [`examples/`](examples), each a single C file.
+Complete apps in [`examples/`](examples), each a single C file. They run in the browser on the [site](https://yappologistic.github.io/CUI/#/apps).
 
 <table>
 <tr>
@@ -271,6 +244,9 @@ Complete apps in [`examples/`](examples), each a single C file.
 
 | Example | What it shows |
 |---|---|
+| [`hello`](examples/hello.c) | The smallest app |
+| [`todo`](examples/todo.c) | The app the [tutorial](docs/tutorial.md) builds: a list, a filter, a dialog, saving to a file |
+| [`caffeine`](examples/caffeine.c) | The instruments together: a dot-matrix chart with annotations, cups you drag on a time axis, readouts and a dot-matrix verdict |
 | [`assistant`](examples/assistant.c) | AI assistant: reasoning, tool calls, sources, plan, composer with a model picker |
 | [`tracker`](examples/tracker.c) | Issue tracker: grouped list, custom status glyphs, detail pane, activity |
 | [`music`](examples/music.c) | Music player: cover art drawn on a canvas, track list, transport bar |
@@ -280,7 +256,6 @@ Complete apps in [`examples/`](examples), each a single C file.
 | [`notes`](examples/notes.c) | Split view, search, context menus, dialogs, shortcuts, file export |
 | [`settings`](examples/settings.c) | Forms, validation, preferences and a danger zone |
 | [`gallery`](examples/gallery_ui.c) | Every component, light and dark, all accents |
-| [`hello`](examples/hello.c) | The smallest app |
 
 <table>
 <tr>
@@ -295,7 +270,7 @@ Complete apps in [`examples/`](examples), each a single C file.
 
 </details>
 
-## Light, dark and eight accents
+## Themes
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/showcase/accents-dark.png">
@@ -307,23 +282,21 @@ cui_set_theme(ui, CUI_THEME_DARK);      /* animates */
 cui_set_accent(ui, CUI_ACCENT_BLUE);    /* neutral, violet, blue, green, amber, orange, coral, rose */
 ```
 
-All colors are semantic tokens (`CUI_COLOR_SURFACE`, `CUI_COLOR_TEXT_SECONDARY`, `CUI_COLOR_ACCENT` and so on), so your own boxes follow the theme too. Run any app in the other theme with `CUI_THEME=dark` or `CUI_THEME=light`. See [Theming](docs/theming.md).
+Colors are named tokens (`CUI_COLOR_SURFACE`, `CUI_COLOR_ACCENT` and so on), so your own drawing follows the theme too. See [Theming](docs/theming.md).
 
 ## Size and speed
 
 | Measure | Result |
 |---|---|
-| `hello` on Linux, stripped, whole executable | about 240 KB |
-| `assistant` (the AI app above), whole executable | about 350 KB |
-| Whole library: about 190 components, both renderers, X11 backend, fonts and icons | about 1,050 KB |
-| Build, layout and paint a frame (gallery pages, 1240 × 820 points at 2×) | 0.09 to 0.75 ms, most under 0.25 |
-| Software rasterization of the same frame, all of it (2480 × 1640 pixels, 4 threads) | 3.4 to 19 ms |
-| Software rasterization after the first frame | only what changed: 4 to 15% of the pixels in a typical frame |
-| A real app in use (Notes, Mail, an IDE; software renderer, 1280 × 800) | 2 to 3% of a core, 11 to 13 MB resident |
-| Library memory over an hour of use | 2 to 9 MB, flat, nothing left after `cui_destroy` |
-| Idle CPU | 0%, event driven |
+| `hello` on Linux, the whole executable, stripped | about 250 KB |
+| `assistant` (the AI app above), the whole executable | about 360 KB |
+| The whole library: every component, both renderers, the X11 backend, fonts and icons | about 1,130 KB |
+| Build, lay out and paint one frame (gallery pages, 1240 × 820 points at 2×) | 0.09 to 0.75 ms, most under 0.25 |
+| A real app in use (Notes, Mail, an IDE; software renderer, 1280 × 800) | 2 to 3% of one core, 11 to 13 MB of memory |
+| Library memory over an hour of use | 2 to 9 MB, flat, with nothing left after `cui_destroy` |
+| CPU while nothing happens | 0%: the app waits for events |
 
-The library is compiled for dead code stripping, so apps only carry what they use, and every heavy part (fonts, image decoding, the window layer) can be turned off ([Integration](docs/integration.md#binary-size)). Timings are wall clock on a 4 core cloud VM; `cui_bench` in [`tests/`](tests) reproduces them, and [Performance](docs/performance.md) has the hour-long soak tests behind the memory and CPU rows.
+An app carries only the components it calls, which is why `hello` is a quarter of the library. The times are wall clock on a 4 core cloud VM. `cui_bench` in [`tests/`](tests) reproduces them, and [Performance](docs/performance.md) describes the hour-long runs behind the memory and CPU rows.
 
 ## Platforms
 
@@ -336,53 +309,68 @@ The library is compiled for dead code stripping, so apps only carry what they us
 | Browser | WebAssembly, plain clang ([how](docs/getting-started.md#run-in-the-browser)) | WebGL2, or software | Docs site, every push |
 | Anything | Your own | Your own (one shader) | |
 
-Set `CUI_RENDERER=software` to force the software renderer and `CUI_SCALE=2` to override the display scale. To use CUI inside an engine with your own window and renderer, see [Integration](docs/integration.md) and [Rendering](docs/rendering.md).
+To use CUI inside an engine with your own window and renderer, see [Integration](docs/integration.md) and [Rendering](docs/rendering.md). The core only emits triangles.
 
-## Status and limitations
+## Limitations
 
-CUI 1.3 is complete enough to build real desktop apps. Every push runs unit, interaction and render tests, a randomized input fuzzer under AddressSanitizer and UndefinedBehaviorSanitizer, and real windows on Windows, macOS and Linux. What it does not do yet:
+- **No screen reader support.** There is no accessibility tree yet. This rules CUI out for apps that must be accessible to blind users.
+- **The keyboard does not reach everything.** Most components work from the keyboard and each one's page lists its keys. Some parts still need a pointer: the rating, the histogram slider's handles, swipe actions, the reorderable list, the JSON viewer, the agent plan's steps, blame, the time histogram, and the choices inside the open time picker and color picker.
+- **Complex scripts are partial.** Text is UTF-8 with kerning and font fallback, and layouts mirror for right-to-left languages. Arabic-script shaping and bidirectional text are an optional, experimental build option for static text ([details](docs/integration.md#optional-arabic-script-text-shaping)). CJK works once you add a fallback font.
+- **Input methods compose in the system's window.** Committed text arrives; the text being composed is not drawn inline.
+- **No native Wayland backend.** Use the SDL2 or GLFW backend, or XWayland.
+- **No Android or iOS.** Layouts adapt to phone widths and touch, and apps run in mobile browsers, but there is no platform layer for phones.
+- **It is new.** Version 1.0 was released in November 2026, so it has little real-world use behind it yet. The [changelog](CHANGELOG.md) lists what each release changed.
 
-- **Screen readers.** There is no accessibility tree yet. Keyboard navigation and focus are complete.
-- **Complex scripts.** Text is UTF-8 with kerning and font fallback. The optional `CUI_TEXT_SHAPING` CMake option adds Arabic-script shaping, Unicode bidi and shaped paragraph wrapping for static text (see [integration](docs/integration.md#optional-arabic-script-text-shaping)). Screens mirror for right-to-left languages with `.direction = CUI_DIRECTION_RTL` ([layout](docs/layout.md)). Explicit embeddings, overrides and isolates are unsupported. It is off by default. Editing and other complex scripts remain outside this experimental path. CJK works once you add a fallback font.
-- **Inline IME composition.** Committed text from input methods works; the text being composed shows in the system's IME window.
-- **Native Wayland.** Use the SDL2 or GLFW backend, or XWayland.
-- **Phones.** Layouts adapt to phone widths and touch, and apps run in mobile browsers, but there is no Android or iOS platform layer yet.
+## How it is built and tested
+
+Most of CUI's code is written by AI models under the maintainer's direction. Every commit names the model that wrote it in a `Co-Authored-By` trailer, and the [contribution rules](docs/CONTRIBUTING.md) ask the same of everyone who sends a change.
+
+Because of that, the tests are what the project stands on. Every push runs 19 CI jobs:
+
+- unit, interaction and render tests on Windows (MSVC and MinGW), macOS and Linux (GCC and Clang, with the X11, SDL2 and GLFW backends);
+- a fuzzer that drives the gallery and the example apps with random input under AddressSanitizer and UndefinedBehaviorSanitizer;
+- real windows opened on all three systems;
+- the single-file build with GCC and Clang;
+- the commands of the getting-started guide, taken from the guide and run as written.
+
+The images in [`docs/images`](docs/images) are rendered by the tests, so a visual change and its documentation move together.
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
 
 ## Documentation
 
 | Guide | What it covers |
 |---|---|
 | [Getting started](docs/getting-started.md) | Install, build, the frame loop, your first screens |
+| [Tutorial](docs/tutorial.md) | Build a small, complete app step by step |
+| [Building an app](docs/apps.md) | The window, when frames happen, what components return, threads, shipping |
+| [Recipes](docs/recipes.md) | Complete programs: a form, a sorted table, a background task, saved settings |
 | [Layout](docs/layout.md) | Rows, columns, sizes, alignment, grids, scrolling, split views |
-| [Components](docs/components.md) and [more](docs/components-more.md) | Every component with screenshots, options and keyboard support |
+| [Components](docs/components.md) and [more](docs/components-more.md) | Every component: what it is, usage, options, keyboard |
 | [Theming](docs/theming.md) | Tokens, light and dark, accents, fonts, motion |
-| [Icons](docs/icons.md) | The built-in Lucide icons, and how to use any other icon font |
-| [Custom components](docs/custom-components.md) | Canvas, drawing API, state and animation |
-| [Integration](docs/integration.md) | Your own window, input and renderer |
+| [Icons](docs/icons.md) | The built-in Lucide icons, and how to use another icon font |
+| [Custom components](docs/custom-components.md) | The canvas, the drawing API, state and animation |
+| [Integration](docs/integration.md) | Your own window, input and renderer; C++; binary size |
 | [Rendering](docs/rendering.md) | The vertex format and the reference shader |
-| [Performance](docs/performance.md) | How memory and speed are tested over hours of use, and the results |
-| [How CUI is built](docs/architecture.md) and [Contributing](docs/CONTRIBUTING.md) | The code map, the outline every component follows, and the rules for changes |
-| [Design principles](docs/design.md) | The rules every component follows |
+| [Performance](docs/performance.md) | How memory and speed are tested, and the results |
+| [Function reference](https://yappologistic.github.io/CUI/#/reference) | Every public function with its signature, on the site |
+| [Questions](docs/faq.md) | What CUI is and is not, how it compares, what it cannot do |
+| [How CUI is built](docs/architecture.md) | The code map and the outline every component follows |
+| [Design principles](docs/design.md) | The visual rules every component follows |
 
-**Live docs.** The same guide, with every component running in your browser, is at **https://yappologistic.github.io/CUI/**: the library compiled to WebAssembly and drawn with a WebGL2 port of its renderer. It is rebuilt from `master` on every push. To run it locally, use `web/tools/serve.sh` (needs clang with the `wasm32` target) and open http://localhost:8765. See [`web/`](web).
-
-## Development
-
-```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build
-ctest --test-dir build --output-on-failure    # unit, interaction and render tests, the fuzzer
-```
-
-The documentation images in [`docs/images`](docs/images) are rendered by the tests (`tests/component_shots.c` for components and showcase scenes, `tests/screenshots.c` for the overviews), so a visual change and its documentation move together.
+The [live site](https://yappologistic.github.io/CUI/) has the same guides with every component running beside its page. It is rebuilt from `master` on every push; to run it locally, use `web/tools/serve.sh` (needs clang with the `wasm32` target).
 
 ## Contributing
 
-Bug reports and pull requests are welcome, from people and from AI agents. Every report needs an honest account of who wrote it (and which model, if an AI did) and evidence you produced yourself: the commands you ran and their output. [Contributing](docs/CONTRIBUTING.md) explains what that means, and the issue forms and pull request template ask for it.
+Bug reports and pull requests are welcome, from people and from AI agents. Every report needs an honest account of who wrote it (and which model, if an AI did) and evidence you produced yourself: the commands you ran and their output. [Contributing](docs/CONTRIBUTING.md) explains what that means.
 
 ## Credits
 
-Type: [Inter](https://rsms.me/inter/) and [Geist](https://vercel.com/font) (SIL Open Font License). Icons: [Lucide](https://lucide.dev) (ISC). Font rasterization and PNG output: [stb](https://github.com/nothings/stb) (public domain). See [THIRD_PARTY.md](THIRD_PARTY.md). The live docs' overview uses Ansel Adams' *The Tetons and the Snake River* (1942, U.S. National Archives, public domain).
+Type: [Inter](https://rsms.me/inter/) and [Geist](https://vercel.com/font) (SIL Open Font License). Icons: [Lucide](https://lucide.dev) (ISC). Font rasterization, image decoding and PNG output: [stb](https://github.com/nothings/stb) (public domain). See [THIRD_PARTY.md](THIRD_PARTY.md). The site's overview uses Ansel Adams' *The Tetons and the Snake River* (1942, U.S. National Archives, public domain).
 
 ## License
 

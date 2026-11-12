@@ -235,7 +235,8 @@ enum {
     CUI_NF_ROW_WRAP    = 1 << 15,  /* row that breaks children onto new lines */
     CUI_NF_LINE_START  = 1 << 16,  /* computed: first child of a wrapped line */
     CUI_NF_KEEP_W      = 1 << 17,  /* never shrinks below its preferred width (its siblings give way) */
-    CUI_NF_ADAPTIVE    = 1 << 18   /* rearranges itself when narrow: min_w is its minimum, not its content */
+    CUI_NF_ADAPTIVE    = 1 << 18,  /* rearranges itself when narrow: min_w is its minimum, not its content */
+    CUI_NF_OVERLAY     = 1 << 19   /* absolute: painted and hit tested after the flow children, over them */
 };
 
 struct cui_node;
@@ -390,6 +391,7 @@ typedef struct cui_hit {
 typedef struct cui_interact {
     bool hovered, pressed, clicked, right_clicked, double_clicked, focused, active, released, keyboard_activate;
     bool focus_visible;
+    bool keyboard_focused;    /* focused with no popup above this layer */
 } cui_interact;
 
 enum { CUI_IF_FOCUSABLE = 1, CUI_IF_DRAG = 2, CUI_IF_KEEP_FOCUS = 4, CUI_IF_TEXT = 8 };
@@ -415,6 +417,7 @@ typedef struct cui_popup {
 } cui_popup;
 
 typedef struct cui_toast_item {
+    double last_tick;
     int handle;
     char title[128];
     char desc[256];
@@ -641,6 +644,7 @@ const char *cui__weekday_short(cui_ctx *ui, int d);   /* "Mon" */
 const char *cui__weekday_min(cui_ctx *ui, int d);     /* "Mo" */
 const char *cui__today_text(cui_ctx *ui);
 const char *cui__size_text(cui_ctx *ui, double bytes);   /* "4.2 KB" */
+const char *cui__mmss(cui_ctx *ui, float seconds);        /* a play time, "3:07"; negative reads as 0 */
 int cui__utc_offset(int64_t t);                           /* minutes east of UTC of the local zone at t */
 
 /* ---- shared widget pieces ---- */
@@ -654,10 +658,14 @@ bool cui__popup_begin(cui_ctx *ui, cui_id id, cui_id anchor, int placement, floa
 void cui__popup_end(cui_ctx *ui);
 void cui__popup_set(cui_ctx *ui, cui_id id, bool open);
 void cui__close_all_popups(cui_ctx *ui);
+bool cui__keys_covered(cui_ctx *ui);   /* an open popup sits above the layer being built, so the keys are its (cui_chrome.c) */
 void cui__color_picker_open(cui_ctx *ui, cui_id id, cui_color value);   /* opens cui_color_picker's popover from code */
+/* a dashed rounded rectangle, the dashes continuing round the corners (cui_pickers.c: the dropzone, gantt plans) */
+void cui__draw_dashed_rrect(cui_ctx *ui, cui_rect r, float rad, cui_color c, float th, float dash, float gap);
 typedef struct { int highlight; int item_count; int prev_item_count; bool keyboard; } cui__menu_nav;
 typedef struct { cui_color bg, bg_hover, bg_press, fg, border, border_hover; } cui__btn_colors;
 cui__btn_colors cui__button_colors(cui_ctx *ui, cui_button_variant v, bool selected);
+bool cui__icon_button_id(cui_ctx *ui, cui_id id, const char *icon, const cui_button_opts *o);
 /* Edge for controls their label already identifies (outline buttons, chips,
  * groups). Fields, checkboxes and radios keep BORDER_STRONG (3:1): their edge
  * is the only thing that marks them. */
@@ -668,6 +676,10 @@ void cui__focus_ring(cui_ctx *ui, int node, float alpha);   /* keyboard focus ri
 void cui__icon_swap(cui_ctx *ui, cui_id state_id, const char *icon, float size, cui_color c);
 cui_id cui__position_id(cui_ctx *ui, uint32_t salt);       /* stable id from the parent and child index */
 void cui__chevron_node(cui_ctx *ui, float angle, float size, cui_color color);   /* 0 points down */
+int cui__initials(const char *name, char *out);   /* up to two initials of a name, for avatars; out holds 16 bytes */
+/* Room for a custom item of width w in the toolbar being built (cui_chrome.c); false when it does not
+ * fit and the caller should leave it out. Without a toolbar there is always room. */
+bool cui__toolbar_reserve(cui_ctx *ui, float w);
 int cui__text_field(cui_ctx *ui, cui_id id, char *buf, size_t cap, const cui_input_opts *o, bool multiline, int style, const char *trailing_icon_default);
 int cui__edit_lines(cui_ctx *ui, cui_font f, float size, const char *buf, int len, float width, cui_text_layout_line **out);   /* wrapped lines of an edit buffer */
 void cui__label_text(cui_ctx *ui, const char *label, cui_font font, float size, cui_color color);
@@ -677,6 +689,21 @@ void cui__field_message(cui_ctx *ui, const char *hint, const char *error);
 int cui__scroll_begin_ex(cui_ctx *ui, cui_id id, const cui_box *box, bool horizontal);
 void cui__nice_range(float lo, float hi, int target_ticks, float *out_lo, float *out_hi, float *out_step);
 const char *cui__fmt_value(cui_ctx *ui, const char *fmt, float v);
+/* slider keys on a 0..1 position (cui_controls.c): arrows move by step (Shift: ten steps),
+ * Home and End go to the ends; right to left, Left moves toward the end */
+float cui__slider_keys(cui_ctx *ui, float t, float step, bool rtl);
+/* gradient pieces (cui_curves.c): a checkerboard cut to a rounded rectangle, and a ramp of
+ * stops drawn as cui_gradient_eval colors it, its ends rounded by rad */
+void cui__draw_checker(cui_ctx *ui, cui_rect r, float rad, float cell, cui_color light, cui_color dark);
+void cui__draw_gradient_ramp(cui_ctx *ui, cui_rect r, float rad, const cui_gradient_stop *stops, int n);
+/* a dashed rounded rectangle, the dashes running on round the corners (cui_pickers.c) */
+void cui__draw_dashed_rrect(cui_ctx *ui, cui_rect r, float rad, cui_color c, float th, float dash, float gap);
+/* chart annotations (cui_instrument.c): drawn by every chart that takes them */
+void cui__paint_annotations(cui_ctx *ui, const cui_chart_annotation *a, int n, cui_rect plot, double x0, double x1,
+                            double y0, double y1, float label_top, bool gutter);
+cui_chart_annotation *cui__copy_annotations(cui_ctx *ui, const cui_chart_annotation *a, int n);
+/* a dashed hairline from x0 to x1 at y: `dash` points drawn every `period` (cui_instrument.c) */
+void cui__draw_hdash(cui_ctx *ui, float x0, float x1, float y, float dash, float period, cui_color c);
 void cui__scroll_end_ex(cui_ctx *ui);
 cui_color cui__backdrop(cui_ctx *ui);
 

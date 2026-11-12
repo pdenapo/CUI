@@ -25,13 +25,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install clang and LLVM tools
+        timeout-minutes: 15
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q clang lld llvm
+          sh .github/apt-install.sh clang lld llvm
           # wasm-ld and llvm-ar live in the versioned LLVM folder
           echo "$(ls -d /usr/lib/llvm-*/bin | sort -V | tail -1)" >> "$GITHUB_PATH"
       - name: Build
         run: web/tools/build.sh
+      - name: Check the page data
+        # every component page has a description, well-formed options and a keyboard section
+        run: node web/tools/check_catalog.mjs
       - name: Collect the files
         # the site links to assets/fonts, docs/images and examples; copy them as real files
         run: cp -rL web/site _site

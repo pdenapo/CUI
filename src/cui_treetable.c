@@ -716,7 +716,9 @@ cui_path_bar_result cui_path_bar_ex(cui_ctx *ui, const char *id_str, const char 
             cui__focus_ring(ui, p, r.focus_visible ? 1.0f : 0.0f);
             if (r.clicked) {
                 cui_popup *pp = cui__popup_get(ui, more_pid, true);
-                if (pp) { cui__popup_set(ui, more_pid, !pp->open); pp->at_mouse = false; }
+                /* Enter or Space on the pill while its menu is open picks the highlighted item */
+                bool key_activate = ui->focus == more_id && ui->focus_visible && (cui_key_pressed(ui, CUI_KEY_ENTER) || cui_key_pressed(ui, CUI_KEY_SPACE));
+                if (pp && !(pp->open && key_activate)) { cui__popup_set(ui, more_pid, !pp->open); pp->at_mouse = false; }
             }
             continue;
         }

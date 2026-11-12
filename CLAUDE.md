@@ -1,6 +1,6 @@
 # CUI: guide for AI agents
 
-CUI is an immediate-mode UI library in C99: about 190 components, a software and an OpenGL renderer, Win32, Cocoa, X11, SDL2 and GLFW backends. The human docs are the source of truth; this file only points at them and lists what agents most often get wrong.
+CUI is an immediate-mode UI library in C99: about 210 components, a software and an OpenGL renderer, Win32, Cocoa, X11, SDL2 and GLFW backends. The human docs are the source of truth; this file only points at them and lists what agents most often get wrong.
 
 ## Read first
 
@@ -29,7 +29,7 @@ cc -O1 -DCUI_SOAK_NO_X11 -DSOAK_APP='"../examples/mail.c"' -I include -I src tes
 - **Search before you write a helper.** Shared logic lives once in `cui_internal.h`: `CUI_C` for theme colors, `cui__emphasis` for the selected or active color, `cui__fs` for font sizes, `CUI__T_*` and `CUI__SPRING_*` for motion, `cui__draw_text_at` for text placed by a point. Do not copy a helper into another file.
 - **Follow the component outline** in `docs/architecture.md`: options struct with a zero default, `_ex` function plus macro in `cui.h`, one state struct, paint data in frame memory, theme tokens instead of raw colors.
 - **Split long functions by phase** (input, build, paint) with shared values in one struct. Do not add loose fields to `cui_ctx`; begin/end components use `ui->building`.
-- **Names are unique across all files**, statics included, and no variable is named `near` or `far`: `tools/amalgamate.py` compiles the library as one file.
+- **Names are unique across all files**, statics included, and no name is a word the Windows SDK defines as a macro (`small`, `near`, `far`, `interface`, `ERROR`... see `tests/windows_sdk_words.h`): `tools/amalgamate.py` compiles the library as one file, and CI compiles it with those macros defined.
 - **The core never calls into component files.** Optional parts install a hook (`ui->emoji_hook`).
 - **Refactors must not change behavior.** Show it: ctest (shaping off and on), screenshots byte-identical before and after, and the soak `--hash` fingerprint unchanged. Keep refactors and behavior changes in separate commits.
 - **Size matters.** Check `examples/hello` in a `MinSizeRel` build when you add code to the core.

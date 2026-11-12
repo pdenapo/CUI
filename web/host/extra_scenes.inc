@@ -297,6 +297,50 @@ SCENE(kanban_live) {
     if (cui_kanban_end(ui, &mv)) web_kb_apply(&mv);
 }
 
+/* voice, live: record with the composer's microphone (a pretend one), send the take, and
+ * it lands above as a voice note that plays back; the page moves the position itself */
+static void scene_voice_demo(cui_ctx *ui, int f) {
+    static char draft[128] = "";
+    static bool recording = false;
+    static float take[400], kept[4][64];
+    static int take_n = 0, note_n = 0, last_step = -1;
+    static cui_voice_note notes[4];
+    static double last = -1;
+    if (f < 0) return;
+    double now = cui_time(ui);
+    float dt = last < 0 ? 0 : (float)(now - last);
+    last = now;
+    int step = voice_step(ui);
+    if (recording && step != last_step && take_n < 400) take[take_n++] = 0.85f * voice_level(step * VOICE_STEP * 1.1f, 1.7f);
+    last_step = step;
+    if (recording) cui_request_wakeup(ui, VOICE_STEP);
+    cui_column(ui, .width = CUI_FILL, .height = CUI_FILL, .bg = CUI_COLOR_BACKGROUND, .pad = frame_pad(ui), .gap = 10, .justify = CUI_JUSTIFY_END) {
+        if (!note_n) cui_text(ui, "Press the microphone, then send.", .size = 13, .color = CUI_COLOR_TEXT_MUTED);
+        for (int k = 0; k < note_n; k++) {
+            cui_voice_note *n = &notes[k];
+            if (n->playing) {
+                n->position += dt * (n->speed > 0 ? n->speed : 1);
+                if (n->position >= n->duration) { n->position = 0; n->playing = false; }
+                cui_request_wakeup(ui, 1.0f / 30.0f);
+            }
+            cui_push_id_int(ui, k);
+            cui_voice_note(ui, "note", n, .mine = true);
+            cui_pop_id(ui);
+        }
+        int ev = cui_chat_composer(ui, "composer", draft, sizeof draft, .placeholder = "Message", .mic = true, .recording = recording,
+                                   .levels = take, .level_count = take_n, .record_seconds = take_n * VOICE_STEP);
+        if (ev & CUI_COMPOSER_RECORD) { recording = true; take_n = 0; }
+        if (ev & CUI_COMPOSER_CANCEL) recording = false;
+        if (ev & CUI_COMPOSER_VOICE) {
+            recording = false;
+            int k = note_n < 4 ? note_n++ : 3;
+            cui_voice_resample(take, take_n, kept[k], 64);
+            notes[k] = (cui_voice_note){ kept[k], 64, 0, take_n * VOICE_STEP, 1, false };
+        }
+        if (ev & CUI_COMPOSER_SEND) draft[0] = 0;
+    }
+}
+
 /* docking, live: the doc scene's warm-up holds a tab mid-drag for its screenshot;
  * this variant skips the warm-up, so the page starts with nothing in hand */
 static void scene_docking_live(cui_ctx *ui, int f) {
@@ -314,4 +358,5 @@ static void scene_docking_live(cui_ctx *ui, int f) {
     { "theme-switcher", scene_theme_switcher, 420, 110, true }, { "swipe-actions", scene_swipe_actions, 560, 240, true }, \
     { "money-field", scene_money_field, 580, 150, true }, { "prefix-suffix", scene_prefix_suffix, 540, 130, true }, \
     { "rolling-numbers", scene_rolling_numbers, 420, 170, true }, { "toast-demo", scene_toast_demo, 600, 300, true }, \
-    { "dialog-demo", scene_dialog_demo, 620, 340, true }, { "kanban-live", scene_kanban_live, 920, 480, true },
+    { "dialog-demo", scene_dialog_demo, 620, 340, true }, { "kanban-live", scene_kanban_live, 920, 480, true }, \
+    { "voice-demo", scene_voice_demo, 620, 460, true, false, CUI_ACCENT_GREEN },

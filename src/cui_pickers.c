@@ -1445,7 +1445,7 @@ static void cui__dash_line(cui_ctx *ui, cui_vec2 a, cui_vec2 b, float th, cui_co
 }
 
 /* Dashed rounded rectangle: straight runs as dashes, corners as dashed arcs. */
-static void cui__draw_dashed_rrect(cui_ctx *ui, cui_rect r, float rad, cui_color c, float th, float dash, float gap) {
+void cui__draw_dashed_rrect(cui_ctx *ui, cui_rect r, float rad, cui_color c, float th, float dash, float gap) {
     rad = CUI_MIN(rad, CUI_MIN(r.w, r.h) * 0.5f);
     float x0 = r.x + th * 0.5f, y0 = r.y + th * 0.5f, x1 = r.x + r.w - th * 0.5f, y1 = r.y + r.h - th * 0.5f;
     float phase = 0;

@@ -1,8 +1,10 @@
 name: Release
 
-# Publishes a GitHub release named "CUI 1.2" whose notes are that version's section of
-# CHANGELOG.md. Either push a tag like v1.2.0, or run this workflow by hand with the
-# version and the commit to release (it creates the tag).
+# Publishes a GitHub release named "CUI 1.2" (or "CUI 1.2.1" for a patch) whose notes are that version's section of
+# CHANGELOG.md, with the single-file distribution and the example apps built for
+# Windows, macOS and Linux attached. Either push a tag like v1.2.0, or run this workflow
+# by hand with the version and the commit to release (it creates the tag). Running it
+# by hand for a version that is already released refreshes its notes and replaces the files.
 on:
   push:
     tags: ['v*']
@@ -15,6 +17,10 @@ on:
         description: 'Commit or branch to release'
         required: true
         default: master
+      examples:
+        description: 'Build and attach the example apps'
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -22,19 +28,29 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      sha: ${{ steps.version.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
       - name: Version and notes from the changelog
+        id: version
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then tag="v${{ inputs.version }}"; else tag="${GITHUB_REF_NAME}"; fi
-          ver="${tag#v}"; short="${ver%.*}"
-          awk -v v="· ${short}" 'index($0, "## ") == 1 { if (on) exit; if (index($0, v)) { on = 1; next } } on' CHANGELOG.md > notes.md
+          # 1.3.0 is "1.3" in the changelog and the title; a patch release keeps its three numbers
+          ver="${tag#v}"; short="${ver%.0}"
+          # that version's section: its heading ends with the version, or goes on with a colon
+          awk -v v="· ${short}" 'index($0, "## ") == 1 { if (on) exit; i = index($0, v); if (i) { r = substr($0, i + length(v)); if (r == "" || substr(r, 1, 1) == ":") { on = 1; next } } } on' CHANGELOG.md > notes.md
           if [ ! -s notes.md ]; then echo "No section for ${short} in CHANGELOG.md"; exit 1; fi
+          # the changelog links to files beside it; on the release page those links need the whole address
+          sed -i -E "s#\]\((docs|examples|tests|include|src|tools|cmake)/#](https://github.com/${GITHUB_REPOSITORY}/blob/${tag}/\1/#g" notes.md
           echo "tag=${tag}" >> "$GITHUB_ENV"
           echo "title=CUI ${short}" >> "$GITHUB_ENV"
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Single-file distribution
         run: |
           # older commits predate it: release without the files then
@@ -42,4 +58,77 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${tag}" --target "${sha}" --title "${title}" --notes-file notes.md $(ls dist/cui.h dist/cui.c dist/cui_single.h 2>/dev/null)
+        run: |
+          files=$(ls dist/cui.h dist/cui.c dist/cui_single.h 2>/dev/null || true)
+          if gh release view "${tag}" > /dev/null 2>&1; then
+            # already released: keep its commit, refresh the notes and replace the files
+            gh release edit "${tag}" --notes-file notes.md
+            if [ -n "${files}" ]; then gh release upload "${tag}" ${files} --clobber; fi
+          else
+            gh release create "${tag}" --target "${sha}" --title "${title}" --notes-file notes.md ${files}
+          fi
+
+  # The example apps, ready to run: one archive per system, attached to the release.
+  examples:
+    needs: release
+    if: github.event_name != 'workflow_dispatch' || inputs.examples
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, name: linux-x64 }
+          - { os: windows-2022, name: windows-x64 }
+          - { os: macos-latest, name: macos-arm64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.sha }}
+      - name: Install dependencies
+        if: runner.os == 'Linux'
+        timeout-minutes: 15
+        # older commits predate the script: install the plain way then
+        run: if [ -f .github/apt-install.sh ]; then sh .github/apt-install.sh libx11-dev; else sudo apt-get update -q && sudo apt-get install -y -q libx11-dev; fi
+      - name: Build the examples
+        shell: bash
+        run: |
+          # older commits have no examples worth shipping this way: skip quietly
+          if ! grep -q cui_app_target examples/CMakeLists.txt; then echo "skip=1" >> "$GITHUB_ENV"; exit 0; fi
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=MinSizeRel -DCUI_BUILD_TESTS=OFF
+          cmake --build build --config MinSizeRel -j 4
+      - name: Pack
+        if: env.skip != '1'
+        shell: bash
+        run: |
+          tag="${{ needs.release.outputs.tag }}"
+          dir="cui-${tag#v}-examples-${{ matrix.name }}"
+          mkdir "$dir"
+          for app in hello todo caffeine gallery dashboard settings notes mail tracker music finance assistant; do
+            f=$(find build/examples -type f \( -name "$app" -o -name "$app.exe" \) | head -1)
+            if [ -z "$f" ]; then echo "missing example: $app"; exit 1; fi
+            cp "$f" "$dir/"
+          done
+          if [ "$RUNNER_OS" != "Windows" ]; then strip "$dir"/* || true; fi
+          cat > "$dir/README.txt" <<EOF
+          CUI ${tag#v} example apps (${{ matrix.name }})
+
+          Each file is one complete program with nothing to install. Start with "gallery",
+          which shows every component, or "todo", the app the tutorial builds.
+          Their source is in the examples folder of https://github.com/yappologistic/CUI
+
+          Linux: built on Ubuntu 24.04 for X11 (XWayland works). Run with ./gallery
+          macOS: the apps are not signed. Run "xattr -dr com.apple.quarantine ." in this
+          folder once, then ./gallery
+          Windows: SmartScreen may ask before the first run: More info, Run anyway.
+          EOF
+          sed -i.bak 's/^          //' "$dir/README.txt" && rm -f "$dir/README.txt.bak"
+          if [ "$RUNNER_OS" = "Windows" ]; then 7z a -bso0 "$dir.zip" "$dir"; echo "archive=$dir.zip" >> "$GITHUB_ENV"
+          elif [ "$RUNNER_OS" = "macOS" ]; then zip -qr "$dir.zip" "$dir"; echo "archive=$dir.zip" >> "$GITHUB_ENV"
+          else tar -czf "$dir.tar.gz" "$dir"; echo "archive=$dir.tar.gz" >> "$GITHUB_ENV"; fi
+          ls -l "$dir"
+      - name: Attach to the release
+        if: env.skip != '1'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ needs.release.outputs.tag }}" "${archive}" --clobber

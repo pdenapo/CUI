@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.14)
 
 project(cui
-    VERSION 1.3.0
+    VERSION 1.4.0
     DESCRIPTION "Modern native UI components for C"
     LANGUAGES C)
 
@@ -59,6 +59,7 @@ set(CUI_CORE_SOURCES
     src/cui_viz.c
     src/cui_motion.c
     src/cui_ai.c
+    src/cui_voice.c
     src/cui_image.c
     src/cui_nodes.c
     src/cui_flame.c
@@ -72,8 +73,11 @@ set(CUI_CORE_SOURCES
     src/cui_devpanels.c
     src/cui_regex.c
     src/cui_devviews.c
+    src/cui_instrument.c
+    src/cui_canvas.c
     src/cui_tour.c
     src/cui_photo.c
+    src/cui_creative.c
     src/cui_files.c
     src/cui_terminal.c
     src/cui_emoji.c
@@ -125,6 +129,7 @@ else()
     add_library(cui STATIC ${CUI_CORE_SOURCES})
 endif()
 add_library(cui::cui ALIAS cui)
+include(${CMAKE_CURRENT_LIST_DIR}/cmake/CuiApp.cmake)   # cui_app_target(), for apps that link CUI
 
 target_include_directories(cui PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -202,7 +207,9 @@ elseif(CUI_BACKEND STREQUAL "glfw")
     target_link_libraries(cui PUBLIC glfw)
 endif()
 
-set_target_properties(cui PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION ${PROJECT_VERSION_MAJOR})
+# A minor release adds fields to option and description structs, which changes their size, so a
+# shared library is only compatible within one minor version: libcui.so.1.3, libcui.so.1.4...
+set_target_properties(cui PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR})
 
 if(CUI_BUILD_EXAMPLES AND CUI_WITH_APP)
     add_subdirectory(examples)
@@ -222,10 +229,20 @@ install(TARGETS cui EXPORT cuiTargets
 install(DIRECTORY include/cui DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(EXPORT cuiTargets NAMESPACE cui:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/cui)
 include(CMakePackageConfigHelpers)
+# the packages cui::cui's link line names, found again where the installed package is used
+set(CUI_CONFIG_DEPS "")
+if(Threads_FOUND)
+    string(APPEND CUI_CONFIG_DEPS "find_dependency(Threads)\n")
+endif()
+if(CUI_BACKEND STREQUAL "sdl2")
+    string(APPEND CUI_CONFIG_DEPS "find_dependency(SDL2)\n")
+elseif(CUI_BACKEND STREQUAL "glfw")
+    string(APPEND CUI_CONFIG_DEPS "find_dependency(glfw3)\n")
+endif()
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/cuiConfig.cmake
-    "include(CMakeFindDependencyMacro)\ninclude(\"\${CMAKE_CURRENT_LIST_DIR}/cuiTargets.cmake\")\n")
+    "include(CMakeFindDependencyMacro)\n${CUI_CONFIG_DEPS}include(\"\${CMAKE_CURRENT_LIST_DIR}/cuiTargets.cmake\")\ninclude(\"\${CMAKE_CURRENT_LIST_DIR}/CuiApp.cmake\")\n")
 write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/cuiConfigVersion.cmake COMPATIBILITY SameMajorVersion)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/cuiConfig.cmake ${CMAKE_CURRENT_BINARY_DIR}/cuiConfigVersion.cmake
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/cuiConfig.cmake ${CMAKE_CURRENT_BINARY_DIR}/cuiConfigVersion.cmake cmake/CuiApp.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/cui)
 
 # pkg-config
@@ -235,7 +252,7 @@ if(CUI_BACKEND STREQUAL "x11")
 elseif(CUI_BACKEND STREQUAL "cocoa")
     set(CUI_PC_LIBS "${CUI_PC_LIBS} -framework Cocoa -framework QuartzCore -framework OpenGL")
 elseif(CUI_BACKEND STREQUAL "win32")
-    set(CUI_PC_LIBS "${CUI_PC_LIBS} -luser32 -lgdi32 -lopengl32 -lshell32 -limm32 -ldwmapi")
+    set(CUI_PC_LIBS "${CUI_PC_LIBS} -luser32 -lgdi32 -lopengl32 -lshell32 -limm32 -ldwmapi -lcomdlg32 -lole32")
 endif()
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/cui.pc
 "prefix=\${pcfiledir}/../..

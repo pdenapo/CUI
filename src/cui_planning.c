@@ -632,66 +632,135 @@ typedef struct { int drag; int mode; int grab_day; int orig_start, orig_end; flo
 typedef struct {
     cui_gantt_task *tasks;
     int count, days, today;
-    float dw, rh, head_h;
+    float dw, rh, head_h, bh;
     int first_weekday;
-    cui_color weekend, line, today_c, dep;
+    cui_color weekend, today_c, today_bg, dep;
+    const char *today_text;
 } cui__gantt_paint;
+
+/* The state a task is drawn in: the one it was given, else what its progress and today say. */
+static cui_gantt_state cui__gantt_state_of(const cui_gantt_task *t, int today) {
+    if (t->state != CUI_GANTT_AUTO) return t->state;
+    if (t->progress >= 1) return CUI_GANTT_DONE;
+    if (t->progress > 0) return CUI_GANTT_ACTIVE;
+    return today > 0 && t->start <= today ? CUI_GANTT_ACTIVE : CUI_GANTT_PLANNED;
+}
+
+/* done is green, active the first series color, planned neutral, a milestone amber; a task's tone wins */
+static cui_color cui__gantt_color(cui_ctx *ui, const cui_gantt_task *t, int today) {
+    if (t->tone) return cui__tone_color(ui, t->tone);
+    if (t->milestone) return CUI_C(ui, WARNING);
+    switch (cui__gantt_state_of(t, today)) {
+    case CUI_GANTT_DONE: return CUI_C(ui, SUCCESS);
+    case CUI_GANTT_ACTIVE: return CUI_C(ui, SERIES_1);
+    default: return CUI_C(ui, TEXT_MUTED);
+    }
+}
+
+/* where a dependency leaves a task and where one arrives: a bar's ends, a milestone's points */
+static float cui__gantt_out_x(const cui__gantt_paint *p, const cui_gantt_task *t) {
+    return t->milestone ? t->start * p->dw + CUI_MIN(9.0f, p->bh * 0.4f) : t->end * p->dw - 2;
+}
+static float cui__gantt_in_x(const cui__gantt_paint *p, const cui_gantt_task *t) {
+    return t->milestone ? t->start * p->dw - CUI_MIN(9.0f, p->bh * 0.4f) : t->start * p->dw + 2;
+}
+
+/* A dependency: a soft curve from the end of one task to the start of the next, with a small
+ * open arrowhead. When the next task starts before this one ends, the curve leaves from the
+ * bar's near edge and turns into the start. */
+static void cui__gantt_dependency(cui_ctx *ui, const cui__gantt_paint *p, cui_rect r, int from, int to) {
+    const cui_gantt_task *a = &p->tasks[from], *b = &p->tasks[to];
+    float y0 = r.y + from * p->rh + p->rh * 0.5f, y1 = r.y + to * p->rh + p->rh * 0.5f;
+    float sx = r.x + cui__gantt_out_x(p, a) + 2, ex = r.x + cui__gantt_in_x(p, b) - 3;
+    cui_vec2 c0, c1, c2, c3 = { ex, y1 };
+    float mx = r.x + a->start * p->dw, ms = CUI_MIN(9.0f, p->bh * 0.4f);
+    if (a->milestone && ex - mx >= 10 && to != from) {
+        /* from a milestone's lower (or upper) point, clear of its label */
+        c0 = (cui_vec2){ mx, y0 + (y1 > y0 ? ms : -ms) + 1 }; c1 = (cui_vec2){ mx, y1 }; c2 = (cui_vec2){ mx + 2, y1 };
+    } else if (ex - sx >= 14) {
+        float mx = CUI_MAX(sx + 14, (sx + ex) * 0.5f);
+        c0 = (cui_vec2){ sx, y0 }; c1 = (cui_vec2){ mx + 10, y0 }; c2 = (cui_vec2){ CUI_MAX(sx, ex - 24), y1 };
+    } else {
+        float edge = (y1 > y0 ? 1.0f : -1.0f) * (p->bh * 0.5f + 1);
+        float x = CUI_MAX(r.x + a->start * p->dw + 6, ex - 12);
+        c0 = (cui_vec2){ x, y0 + edge }; c1 = (cui_vec2){ x, y1 }; c2 = (cui_vec2){ x + 2, y1 };
+    }
+    enum { N = 24 };
+    cui_vec2 pts[N + 1];
+    for (int i = 0; i <= N; i++) {
+        float t = (float)i / N, u = 1 - t;
+        float w0 = u * u * u, w1 = 3 * u * u * t, w2 = 3 * u * t * t, w3 = t * t * t;
+        pts[i] = (cui_vec2){ w0 * c0.x + w1 * c1.x + w2 * c2.x + w3 * c3.x, w0 * c0.y + w1 * c1.y + w2 * c2.y + w3 * c3.y };
+    }
+    cui_draw_polyline(ui, pts, N + 1, 1.25f, p->dep, false);
+    float dx = pts[N].x - pts[N - 2].x, dy = pts[N].y - pts[N - 2].y, len = sqrtf(dx * dx + dy * dy);
+    if (len <= 0) return;
+    dx /= len; dy /= len;
+    cui_vec2 tip = pts[N];
+    cui_draw_line(ui, tip, (cui_vec2){ tip.x - dx * 5 - dy * 3, tip.y - dy * 5 + dx * 3 }, 1.4f, p->dep);
+    cui_draw_line(ui, tip, (cui_vec2){ tip.x - dx * 5 + dy * 3, tip.y - dy * 5 - dx * 3 }, 1.4f, p->dep);
+}
 
 static void cui__paint_gantt_body(cui_ctx *ui, cui_node *n, void *data) {
     cui__gantt_paint *p = data;
     cui_rect r = n->rect;
+    /* weekends lightly shaded; no rules, the bars carry the rows */
     for (int d = 0; d < p->days; d++) {
         int wd = (p->first_weekday + d) % 7;
-        float x = r.x + d * p->dw;
-        if (wd >= 5) cui_draw_rect(ui, (cui_rect){ x, r.y, p->dw, r.h }, CUI_CORNERS(0), p->weekend);
-        if (wd == 0) cui_draw_rect(ui, (cui_rect){ x, r.y, 1, r.h }, CUI_CORNERS(0), p->line);
+        if (wd >= 5) cui_draw_rect(ui, (cui_rect){ r.x + d * p->dw, r.y, p->dw, r.h }, CUI_CORNERS(0), p->weekend);
     }
-    for (int k = 1; k < p->count; k++) cui_draw_rect(ui, (cui_rect){ r.x, r.y + k * p->rh, r.w, 1 }, CUI_CORNERS(0), cui_alpha(p->line, 0.5f));
-    /* dependencies: elbow from the end of one bar to the start of another */
     for (int k = 0; k < p->count; k++) {
         int dep = p->tasks[k].depends_on;
-        if (dep < 0 || dep >= p->count || dep == k) continue;
-        cui_gantt_task *a = &p->tasks[dep], *b = &p->tasks[k];
-        float x0 = r.x + a->end * p->dw, y0 = r.y + dep * p->rh + p->rh * 0.5f;
-        float x1 = r.x + b->start * p->dw, y1 = r.y + k * p->rh + p->rh * 0.5f;
-        float xm = x0 + 8;
-        cui_draw_line(ui, (cui_vec2){ x0, y0 }, (cui_vec2){ xm, y0 }, 1.4f, p->dep);
-        if (x1 - 10 >= xm) {
-            cui_draw_line(ui, (cui_vec2){ xm, y0 }, (cui_vec2){ xm, y1 }, 1.4f, p->dep);
-            cui_draw_line(ui, (cui_vec2){ xm, y1 }, (cui_vec2){ x1 - 2, y1 }, 1.4f, p->dep);
-        } else {
-            float ym = y0 + (y1 > y0 ? p->rh * 0.5f : -p->rh * 0.5f);
-            cui_draw_line(ui, (cui_vec2){ xm, y0 }, (cui_vec2){ xm, ym }, 1.4f, p->dep);
-            cui_draw_line(ui, (cui_vec2){ xm, ym }, (cui_vec2){ x1 - 10, ym }, 1.4f, p->dep);
-            cui_draw_line(ui, (cui_vec2){ x1 - 10, ym }, (cui_vec2){ x1 - 10, y1 }, 1.4f, p->dep);
-            cui_draw_line(ui, (cui_vec2){ x1 - 10, y1 }, (cui_vec2){ x1 - 2, y1 }, 1.4f, p->dep);
-        }
-        cui_vec2 head[3] = { { x1 - 1, y1 }, { x1 - 6, y1 - 3.5f }, { x1 - 6, y1 + 3.5f } };
-        cui_draw_polygon(ui, head, 3, p->dep);
-    }
-    if (p->today >= 0 && p->today < p->days) {
-        float x = r.x + (p->today + 0.5f) * p->dw;
-        cui_draw_rect(ui, (cui_rect){ x - 0.75f, r.y, 1.5f, r.h }, CUI_CORNERS(0), p->today_c);
+        if (dep >= 0 && dep < p->count && dep != k) cui__gantt_dependency(ui, p, r, dep, k);
     }
 }
 
-typedef struct { float progress; cui_color fill, prog; bool milestone; } cui__gbar_paint;
+/* today, over the bars: an accent line through the rows and its chip at the top of the header */
+static void cui__paint_gantt_today(cui_ctx *ui, cui_node *n, void *data) {
+    cui__gantt_paint *p = data;
+    cui_rect r = n->rect;
+    if (p->today >= 0 && p->today < p->days) {
+        float x = r.x + (p->today + 0.5f) * p->dw;
+        cui_draw_rect(ui, (cui_rect){ x - 0.625f, r.y, 1.25f, r.h }, CUI_CORNERS(0), p->today_c);
+        float fs = cui__fs(ui, ui->theme.text_xs) - 0.5f, w = cui__text_width(ui, CUI_FONT_MEDIUM, fs, p->today_text, -1, false) + 12;
+        cui_rect chip = { x - w * 0.5f, r.y - p->head_h - 1 + 5, w, 18 };
+        cui_draw_rect(ui, chip, CUI_CORNERS(6), p->today_bg);
+        cui__draw_text_at(ui, CUI_FONT_MEDIUM, fs, x, chip.y + chip.h * 0.5f, CUI__AT_CENTER, cui_alpha(p->today_c, 1), p->today_text, false);
+    }
+}
+
+typedef struct {
+    float progress; cui_color c; cui_gantt_state state; bool milestone, hover;
+    const char *pct, *label;   /* the percentage at the bar's end; a milestone's "Name · Nov 16" */
+} cui__gbar_paint;
+
 static void cui__paint_gantt_bar(cui_ctx *ui, cui_node *n, void *data) {
     cui__gbar_paint *p = data;
     cui_rect r = n->rect;
+    float fx = cui__fs(ui, ui->theme.text_xs);
     if (p->milestone) {
+        /* an outlined diamond, tinted inside, with its name and date beside it */
         cui_vec2 c = { r.x + r.w * 0.5f, r.y + r.h * 0.5f };
-        float s = r.h * 0.5f;
-        cui_vec2 pts[4] = { { c.x, c.y - s }, { c.x + s, c.y }, { c.x, c.y + s }, { c.x - s, c.y } };
-        cui_draw_polygon(ui, pts, 4, p->prog);
+        float s = CUI_MIN(9.0f, r.h * 0.4f);
+        cui_vec2 pts[5] = { { c.x, c.y - s }, { c.x + s, c.y }, { c.x, c.y + s }, { c.x - s, c.y }, { c.x, c.y - s } };
+        cui_draw_polygon(ui, pts, 4, cui_alpha(p->c, p->hover ? 0.26f : 0.16f));
+        cui_draw_polyline(ui, pts, 4, 1.5f, p->c, true);
+        if (p->label) cui__draw_text_at(ui, CUI_FONT_MEDIUM, fx, c.x + s + 7, c.y, CUI__AT_LEFT, p->c, p->label, false);
         return;
     }
-    cui_draw_rect(ui, r, n->radius, p->fill);
-    if (p->progress > 0) {
-        cui_push_clip(ui, (cui_rect){ r.x, r.y, r.w * cui__clampf(p->progress, 0, 1), r.h });
-        cui_draw_rect(ui, r, n->radius, p->prog);
+    float rad = n->radius.tl;
+    bool planned = p->state == CUI_GANTT_PLANNED, done = p->state == CUI_GANTT_DONE;
+    /* tints mixed into the surface rather than see-through, so the curves pass behind the bars */
+    cui_color base = CUI_C(ui, SURFACE);
+    cui_draw_rect(ui, r, n->radius, cui_mix(base, p->c, (planned ? 0.10f : 0.16f) + (p->hover ? 0.06f : 0)));
+    if (planned) cui__draw_dashed_rrect(ui, r, rad, cui_mix(base, p->c, 0.45f), 1, 3, 3);
+    if (p->progress > 0 && !planned) {
+        float w = r.w * cui__clampf(p->progress, 0, 1);
+        cui_push_clip(ui, (cui_rect){ r.x, r.y, w, r.h });
+        cui_draw_rect(ui, r, n->radius, cui_mix(base, p->c, done ? 0.32f : 0.55f));
         cui_pop_clip(ui);
     }
+    if (p->pct) cui__draw_text_at(ui, CUI_FONT_BODY, fx - 0.5f, r.x + r.w - 8, r.y + r.h * 0.5f, CUI__AT_RIGHT, done ? p->c : CUI_C(ui, TEXT_SECONDARY), p->pct, true);
 }
 
 static int cui__gantt_ex_body(cui_ctx *ui, const char *id_str, cui_gantt_task *tasks, int count, cui_date origin, int days, const cui_gantt_opts *o);
@@ -768,10 +837,9 @@ static int cui__gantt_ex_body(cui_ctx *ui, const char *id_str, cui_gantt_task *t
         if (slim) rn->gap = 8;
         if (st->drag == k + 1) rn->bg = CUI_C(ui, HOVER);
         cui__open(ui, row);
-        cui_color tone = cui__tone_color(ui, tasks[k].tone ? tasks[k].tone : CUI_TONE_ACCENT);
-        int dot = cui__leaf(ui, 0, CUI_PX(8), CUI_PX(8));
-        ui->nodes[dot].radius = CUI_CORNERS(tasks[k].milestone ? 1 : 4);
-        ui->nodes[dot].bg = tone;
+        int dot = cui__leaf(ui, 0, CUI_PX(7), CUI_PX(7));
+        ui->nodes[dot].radius = CUI_CORNERS(3.5f);
+        ui->nodes[dot].bg = cui__gantt_color(ui, &tasks[k], o->today);
         int t = cui__text_node(ui, tasks[k].name, -1, CUI_FONT_BODY, cui__fs(ui, ui->theme.text_sm), CUI_C(ui, FOREGROUND), false);
         ui->nodes[t].line_height = 1.3f;
         ui->nodes[t].w = CUI_FILL;
@@ -834,7 +902,7 @@ static int cui__gantt_ex_body(cui_ctx *ui, const char *id_str, cui_gantt_task *t
         cui__open(ui, dc);
         int wd = (first_wd + dd) % 7;
         int dt = cui__text_node(ui, cui__frame_printf(ui, "%d", cd.day), -1, is_today ? CUI_FONT_MEDIUM : CUI_FONT_BODY, cui__fs(ui, ui->theme.text_xs),
-                                is_today ? CUI_C(ui, DANGER) : (wd >= 5 ? CUI_C(ui, TEXT_MUTED) : CUI_C(ui, TEXT_SECONDARY)), false);
+                                is_today ? cui__emphasis(ui) : (wd >= 5 ? cui_alpha(CUI_C(ui, TEXT_MUTED), 0.7f) : CUI_C(ui, TEXT_MUTED)), false);
         ui->nodes[dt].line_height = 1.3f;
         ui->nodes[dt].flags |= CUI_NF_TABULAR;
         cui__close(ui);
@@ -851,11 +919,12 @@ static int cui__gantt_ex_body(cui_ctx *ui, const char *id_str, cui_gantt_task *t
     gp->tasks = cui__frame_alloc(ui, sizeof(cui_gantt_task) * (size_t)CUI_MAX(1, count));
     memcpy(gp->tasks, tasks, sizeof(cui_gantt_task) * (size_t)count);
     gp->count = count; gp->days = days; gp->today = o->today > 0 ? o->today : -1;
-    gp->dw = dw; gp->rh = rh; gp->head_h = head_h; gp->first_weekday = first_wd;
-    gp->weekend = cui_alpha(CUI_C(ui, FOREGROUND), ui->mode == CUI_THEME_DARK ? 0.025f : 0.022f);
-    gp->line = CUI_C(ui, BORDER_SUBTLE);
-    gp->today_c = cui_alpha(CUI_C(ui, DANGER), 0.8f);
-    gp->dep = CUI_C(ui, TEXT_MUTED);
+    gp->dw = dw; gp->rh = rh; gp->head_h = head_h; gp->bh = rh - 16; gp->first_weekday = first_wd;
+    gp->weekend = cui_alpha(CUI_C(ui, FOREGROUND), ui->mode == CUI_THEME_DARK ? 0.022f : 0.025f);
+    gp->today_c = cui_alpha(cui__emphasis(ui), 0.85f);
+    gp->today_bg = cui_mix(CUI_C(ui, SURFACE_MUTED), cui__emphasis(ui), ui->mode == CUI_THEME_DARK ? 0.16f : 0.12f);
+    gp->today_text = cui__today_text(ui);
+    gp->dep = cui_mix(CUI_C(ui, TEXT_MUTED), CUI_C(ui, SURFACE), 0.2f);
     bn->paint = cui__paint_gantt_body;
     bn->paint_data = gp;
     cui__open(ui, body);
@@ -881,35 +950,49 @@ static int cui__gantt_ex_body(cui_ctx *ui, const char *id_str, cui_gantt_task *t
             st->orig_start = t->start; st->orig_end = t->end;
             st->mode = near_l ? 2 : near_r ? 3 : 1;
         }
-        cui_color tone = cui__tone_color(ui, t->tone ? t->tone : CUI_TONE_ACCENT);
+        cui_color tone = cui__gantt_color(ui, t, o->today);
+        cui_gantt_state state = cui__gantt_state_of(t, o->today);
         float x = t->start * dw + 2, w = CUI_MAX(dw - 4, (t->end - t->start) * dw - 4);
         float bh = rh - 16;
         if (t->milestone) { w = bh + 4; x = t->start * dw - w * 0.5f; }
         int bnode = cui__absolute(ui, tid, x, k * rh + 8, w, bh);
         cui_node *nd = &ui->nodes[bnode];
-        nd->radius = CUI_CORNERS(CUI__R_SMALL);
+        nd->radius = CUI_CORNERS(7);
         nd->dir = CUI_ROW; nd->align = CUI_ALIGN_CENTER; nd->pad[3] = 10; nd->pad[1] = 8;
-        nd->flags |= CUI_NF_CLIP;
+        if (!t->milestone) nd->flags |= CUI_NF_CLIP;   /* a milestone's label runs past its diamond */
         if (st->drag == k + 1 && st->moved) { nd->elevation = CUI_ELEVATION_RAISED; nd->elevation_alpha = 1; nd->flags |= CUI_NF_ON_TOP; }
         cui__gbar_paint *bp = cui__frame_alloc(ui, sizeof *bp);
-        bp->progress = t->progress;
-        bp->fill = cui_mix(CUI_C(ui, SURFACE), tone, ui->mode == CUI_THEME_DARK ? (r.hovered ? 0.36f : 0.28f) : (r.hovered ? 0.3f : 0.22f));
-        /* in dark mode the tones are light, so the done part is deepened until white labels read on it */
-        bp->prog = ui->mode == CUI_THEME_DARK ? cui_mix(tone, CUI_C(ui, SURFACE), 0.5f) : tone;
+        memset(bp, 0, sizeof *bp);
+        bp->progress = state == CUI_GANTT_DONE && t->progress <= 0 ? 1 : t->progress;
+        bp->c = tone; bp->state = state; bp->hover = r.hovered;
         bp->milestone = t->milestone;
+        float fx = cui__fs(ui, ui->theme.text_xs);
+        if (t->milestone) {
+            cui_date md = cui_date_from_days(base + t->start);
+            bp->label = cui__frame_printf(ui, "%s%s%s %d", t->name ? t->name : "", t->name && *t->name ? " \xc2\xb7 " : "", cui__month_short(ui, md.month - 1), md.day);
+        } else if (state != CUI_GANTT_PLANNED) {
+            /* the percentage at the end, when the name leaves room for it */
+            const char *pct = cui__frame_printf(ui, "%.0f%%", (double)(cui__clampf(bp->progress, 0, 1) * 100));
+            float need = 10 + (t->name ? cui__text_width(ui, CUI_FONT_MEDIUM, fx, t->name, -1, false) : 0) + 12 + cui__text_width(ui, CUI_FONT_BODY, fx, pct, -1, true) + 8;
+            if (w >= need) bp->pct = pct;
+        }
         nd->paint = cui__paint_gantt_bar;
         nd->paint_data = bp;
         cui__mark_interactive(ui, bnode, CUI_IF_DRAG | CUI_IF_FOCUSABLE);
         if (r.hovered && st->drag == 0) cui__set_cursor(ui, (near_l || near_r) ? CUI_CURSOR_RESIZE_EW : CUI_CURSOR_HAND);
         if (!t->milestone && w > 60) {
             cui__open(ui, bnode);
-            bool light_text = t->progress > 0.5f;
-            cui_color fg = light_text ? cui__rgba(255, 255, 255, 255) : cui_mix(CUI_C(ui, FOREGROUND), tone, 0.3f);
-            int bt = cui__text_node(ui, t->name, -1, CUI_FONT_MEDIUM, cui__fs(ui, ui->theme.text_xs), fg, false);
+            cui_color fg = state == CUI_GANTT_PLANNED ? CUI_C(ui, TEXT_SECONDARY) : CUI_C(ui, FOREGROUND);
+            int bt = cui__text_node(ui, t->name, -1, CUI_FONT_MEDIUM, fx, fg, false);
             ui->nodes[bt].line_height = 1.2f;
             cui__close(ui);
         }
         cui__focus_ring(ui, bnode, r.focus_visible ? 1.0f : 0.0f);
+    }
+    if (gp->today >= 0) {
+        int tn = cui__absolute(ui, 0, 0, 0, days * dw, count * rh);
+        ui->nodes[tn].paint = cui__paint_gantt_today;
+        ui->nodes[tn].paint_data = gp;
     }
     cui__close(ui);   /* body */
     cui__close(ui);   /* timeline */
