@@ -116,6 +116,21 @@ static void scene_calendar(cui_ctx *ui, int f) {
         cui_card(ui, .pad = 16) { cui_calendar(ui, "cal", &d_date); }
     }
 }
+/* the months of the year, after a click on the calendar's title */
+static void scene_calendar_months(cui_ctx *ui, int f) {
+    static cui_date d = { 2026, 11, 14 };
+    if (f < 0) {
+        f = -f - 1;
+        if (f == 3) cui_input_mouse_move(ui, 80, 59);
+        if (f == 4) cui_input_mouse_button(ui, CUI_MOUSE_LEFT, true);
+        if (f == 5) cui_input_mouse_button(ui, CUI_MOUSE_LEFT, false);
+        if (f == 6) cui_input_mouse_move(ui, 300, 340);
+        return;
+    }
+    cui_column(ui, .width = CUI_FILL, .height = CUI_FILL, .bg = CUI_COLOR_BACKGROUND, .pad = frame_pad(ui), .align = CUI_ALIGN_START) {
+        cui_card(ui, .pad = 16) { cui_calendar(ui, "cal", &d); }
+    }
+}
 SCENE(tabs) {
     const char *t[] = { "Overview", "Analytics", "Reports", "Settings" };
     cui_column(ui, UPTO(520), .gap = 20) {
@@ -204,6 +219,119 @@ SCENE(feedback) {
         cui_meter(ui, "Storage", 18.4f, 20, "GB");
         cui_row(ui, .gap = 14, .wrap = true, .align = CUI_ALIGN_CENTER) { cui_spinner(ui, 18); cui_spinner(ui, 24); cui_skeleton(ui, CUI_PX(180), 12); }
     }
+}
+SCENE(dither_progress) {
+    cui_column(ui, .gap = 22, UPTO(560)) {
+        cui_progress(ui, 0.62f, .label = "Exporting clip.mp4", .show_value = true, .dither = true);
+        cui_progress(ui, 0, .label = "Syncing library", .indeterminate = true, .dither = true);
+    }
+}
+/* every dither spinner style in a tile with what it is for, then the inline sizes */
+typedef struct { const char *name, *use; cui_spinner_style style; float size; } ds_tile;
+static void ds_tiles(cui_ctx *ui, const ds_tile *t, int n) {
+    cui_box(ui, .dir = CUI_GRID, .columns = 3, .min_column_width = 200, .gap = 12, UPTO(740)) {
+        for (int k = 0; k < n; k++)
+            cui_column(ui, .width = CUI_FILL, .pad = 14, .gap = 6, .align = CUI_ALIGN_CENTER, .radius = 14, .border = 1, .bg = CUI_COLOR_BACKGROUND) {
+                cui_column(ui, .height = CUI_PX(72), .justify = CUI_JUSTIFY_CENTER) { cui_spinner(ui, t[k].size, .style = t[k].style); }
+                cui_text(ui, t[k].name, .font = CUI_FONT_MEDIUM, .size = 13);
+                cui_text(ui, t[k].use, .size = 12, .color = CUI_COLOR_TEXT_MUTED, .align = CUI_TEXT_CENTER, .width = CUI_FILL);
+            }
+    }
+}
+static void ds_inline(cui_ctx *ui) {
+    cui_row(ui, .gap = 14, .align = CUI_ALIGN_CENTER, .justify = CUI_JUSTIFY_CENTER, .wrap = true, UPTO(740)) {
+        cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER, .pad_x = 14, .pad_y = 8, .radius = 10, .bg = CUI_COLOR_FOREGROUND) {
+            cui_spinner(ui, 14, .style = CUI_SPINNER_COMET, .color = CUI_COLOR_BACKGROUND);
+            cui_text(ui, "Saving\xe2\x80\xa6", .font = CUI_FONT_MEDIUM, .size = 13, .color = CUI_COLOR_BACKGROUND);
+        }
+        cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER, .pad_x = 11, .pad_y = 6, .radius = 999, .border = 1, .bg = CUI_COLOR_SURFACE) {
+            cui_spinner(ui, 14, .style = CUI_SPINNER_ORBIT);
+            cui_text(ui, "Syncing 24 files", .size = 12.5f, .color = CUI_COLOR_TEXT_SECONDARY);
+        }
+        cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER, .pad_x = 11, .pad_y = 6, .radius = 999, .border = 1, .bg = CUI_COLOR_SURFACE) {
+            cui_spinner(ui, 14, .style = CUI_SPINNER_RIPPLE);
+            cui_text(ui, "Connecting", .size = 12.5f, .color = CUI_COLOR_TEXT_SECONDARY);
+        }
+    }
+}
+SCENE(dither_spinners) {
+    static const ds_tile t[] = {
+        { "Comet ring", "A head with a tail that thins out dot by dot.", CUI_SPINNER_COMET, 56 },
+        { "Dot matrix", "Busy states in dense layouts; a wave runs through a 5\xc3\x97" "5 grid.", CUI_SPINNER_DOT_MATRIX, 56 },
+        { "Fill and drain", "Steps in a job: fills from the bottom, then dissolves away.", CUI_SPINNER_FILL_DRAIN, 52 },
+        { "Radar sweep", "Searching or scanning; found points light up as it passes.", CUI_SPINNER_RADAR, 64 },
+        { "Ripple", "Connecting, pairing or waiting for the other side.", CUI_SPINNER_RIPPLE, 64 },
+        { "Transfer", "Chevrons stream up for sending, down for receiving.", CUI_SPINNER_TRANSFER, 64 },
+        { "Orbit", "Syncing; two dots circle and leave trails that dissolve.", CUI_SPINNER_ORBIT, 60 },
+        { "Bouncing dots", "Typing and chat waits; each dot leaves a short trail.", CUI_SPINNER_BOUNCE, 56 },
+        { "Document scan", "Indexing or importing: a scan line reads the page.", CUI_SPINNER_SCAN, 64 },
+        { "Pulse", "Recording or live: a soft disc breathes in density.", CUI_SPINNER_PULSE, 56 },
+        { "Spiral", "A calm indefinite wait for long background work.", CUI_SPINNER_SPIRAL, 64 },
+        { "Plasma", "Generating images or audio: slow moving noise in a tile.", CUI_SPINNER_PLASMA, 56 },
+    };
+    ds_tiles(ui, t, (int)(sizeof t / sizeof t[0]));
+    ds_inline(ui);
+}
+/* the status spinner while busy and a moment after each result, large and inline */
+SCENE(status_spinner) {
+    static const cui_status st[3] = { CUI_STATUS_BUSY, CUI_STATUS_SUCCESS, CUI_STATUS_ERROR };
+    static const char *names[3] = { "Uploading", "Uploaded", "Upload failed" };
+    cui_row(ui, .gap = 48, .align = CUI_ALIGN_END, .justify = CUI_JUSTIFY_CENTER, .wrap = true, UPTO(560)) {
+        for (int k = 0; k < 3; k++) {
+            cui_push_id_int(ui, k);
+            cui_column(ui, .gap = 12, .align = CUI_ALIGN_CENTER) {
+                cui_status_spinner(ui, "big", st[k], .size = 56);
+                cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
+                    cui_status_spinner(ui, "small", st[k], .size = 16);
+                    cui_text(ui, names[k], .size = 13, .color = CUI_COLOR_TEXT_SECONDARY);
+                }
+            }
+            cui_pop_id(ui);
+        }
+    }
+}
+/* placeholders for a message and a card, drawn in dots under one passing band */
+SCENE(dither_skeleton) {
+    cui_row(ui, .gap = 20, .wrap = true, .align = CUI_ALIGN_START, UPTO(640)) {
+        cui_column(ui, .width = CUI_FILL, .min_width = 240, .pad = 16, .radius = 14, .border = 1) {
+            cui_skeleton_group(ui, .dither = true, .gap = 12) {
+                cui_row(ui, .gap = 12, .align = CUI_ALIGN_CENTER, .width = CUI_FILL) {
+                    cui_skeleton(ui, CUI_PX(32), 32);
+                    cui_column(ui, .gap = 8, .width = CUI_FILL) { cui_skeleton(ui, CUI_PCT(60), 8); cui_skeleton(ui, CUI_PCT(40), 8); }
+                }
+                cui_skeleton(ui, CUI_FILL, 8);
+                cui_skeleton(ui, CUI_PCT(80), 8);
+            }
+        }
+        cui_column(ui, .width = CUI_FILL, .min_width = 240, .pad = 16, .radius = 14, .border = 1) {
+            cui_skeleton_group(ui, .dither = true, .gap = 10) {
+                cui_skeleton(ui, CUI_FILL, 72);
+                cui_skeleton(ui, CUI_PCT(70), 10);
+                cui_skeleton(ui, CUI_PCT(45), 10);
+            }
+        }
+    }
+}
+static cui_id pm_bar;   /* the first meter's bar, for the pointer */
+static void pm_meter(cui_ctx *ui, const char *id, bool gray) {
+    static const cui_meter_part parts[] = { { "Photos", 81 }, { "Video", 58 }, { "Apps", 41 }, { "Docs", 32 } };
+    cui_pattern_meter(ui, id, parts, 4, .total = 256, .label = "Storage", .unit = "GB", .grayscale = gray);
+}
+SCENE(pattern_meter) {
+    cui_column(ui, .gap = 28, UPTO(600)) {
+        pm_meter(ui, "storage", false);
+        pm_bar = cui_last_id(ui);
+        pm_meter(ui, "storage-gray", true);
+    }
+}
+/* the pointer on the second part of the first meter */
+static void scene_pattern_meter_hover(cui_ctx *ui, int f) {
+    if (f < 0) {
+        cui_rect r = cui_get_rect(ui, pm_bar);
+        if (-f - 1 == 4) cui_input_mouse_move(ui, r.x + r.w * 0.42f, r.y + r.h * 0.5f);
+        return;
+    }
+    frame_wrap(ui, body_pattern_meter);
 }
 SCENE(badges) {
     cui_column(ui, .gap = 16) {
@@ -318,6 +446,17 @@ SCENE(line_chart) {
 static void hover_id(cui_ctx *ui, cui_id id, int f, int at, float fx, float fy) {
     cui_rect r = cui_get_rect(ui, id);
     if (f == at && r.w > 0) cui_input_mouse_move(ui, r.x + r.w * fx, r.y + r.h * fy);
+}
+static void body_dither_area(cui_ctx *ui) {
+    static const float api[] = { 22, 19, 17, 21, 30, 38, 41, 37, 34, 39, 33, 26 }, web[] = { 18, 15, 13, 16, 24, 33, 36, 40, 38, 42, 35, 28 };
+    static const char *h[] = { "00:00", "02:00", "04:00", "06:00", "08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00", "22:00" };
+    cui_series s[2] = { { "API", api, 12, CUI_COLOR_SERIES(3) }, { "Web", web, 12, CUI_COLOR_SERIES(0) } };
+    cui_card(ui, UPTO(680)) { cui_line_chart(ui, "area", s, 2, .labels = h, .label_count = 12, .dither = true, .stacked = true, .smooth = true, .height = 210, .format = "%.0fk"); }
+}
+/* the pointer over the afternoon, for the crosshair and the tooltip */
+static void scene_dither_area(cui_ctx *ui, int f) {
+    if (f < 0) { hover_id(ui, cui_make_id(ui, "area") ^ 0x9107u, -f - 1, 30, 0.66f, 0.5f); return; }
+    frame_wrap(ui, body_dither_area);
 }
 static void body_bar_chart(cui_ctx *ui);
 static void scene_bar_chart(cui_ctx *ui, int f) {
@@ -3731,7 +3870,8 @@ SCENE(step_slider) {
     }
 }
 
-static cui_color cc_palette[5] = { CUI_RGB(0xeef0f5), CUI_RGB(0x5c6370), CUI_RGB(0x37c6d0), CUI_RGB(0x1f3a5f), CUI_RGB(0xf2bd68) };
+static cui_color cc_palette[5] = {   /* plain initializers: a static array cannot hold CUI_RGB's compound literals in MSVC */
+    { 0xee, 0xf0, 0xf5, 255 }, { 0x5c, 0x63, 0x70, 255 }, { 0x37, 0xc6, 0xd0, 255 }, { 0x1f, 0x3a, 0x5f, 255 }, { 0xf2, 0xbd, 0x68, 255 } };
 static bool cc_locked[5] = { false, true, false, true, false };
 static uint32_t cc_palette_seed = 7;
 static void body_palette_strip(cui_ctx *ui) {
@@ -4340,6 +4480,31 @@ static cui_texture cb_result_image(cui_ctx *ui) {
     made_for = ui;
     return tex;
 }
+/* a picture, a secret and a spoiler; the key is shown, the others covered */
+static bool veil_photo, veil_key = true, veil_spoiler;
+static void body_veil(cui_ctx *ui) {
+    cui_column(ui, .gap = 12, .pad = 12, .bg = CUI_COLOR_SURFACE, .border = 1, .radius = 16, UPTO(420)) {
+        cui_veil(ui, "photo", &veil_photo, .label = "Sensitive image", .hint = "Click to show", .toggle = true, .radius = 10) {
+            cui_image(ui, cb_result_image(ui), .width = CUI_PX(234), .height = CUI_PX(150), .radius = 10);
+        }
+        cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER, .pad = 8, .pad_x = 10, .bg = CUI_COLOR_SURFACE_MUTED, .radius = 10, .width = CUI_FILL) {
+            cui_text(ui, "sk-live-", .font = CUI_FONT_MONO, .size = 12.5f, .color = CUI_COLOR_TEXT_SECONDARY);
+            cui_box(ui, .width = CUI_FILL) {
+                cui_veil(ui, "key", &veil_key, .color = CUI_COLOR_SURFACE) { cui_text(ui, "4f9a82c1e07d55b3a9", .font = CUI_FONT_MONO, .size = 12.5f); }
+            }
+            if (cui_button(ui, veil_key ? "Hide" : "Reveal", .size = CUI_SIZE_SM)) veil_key = !veil_key;
+        }
+        cui_row(ui, .gap = 4, .wrap = true, .align = CUI_ALIGN_CENTER) {
+            cui_text(ui, "Finished it last night. The ending:");
+            cui_veil(ui, "spoiler", &veil_spoiler, .toggle = true, .radius = 4) { cui_text(ui, "the keeper was the narrator"); }
+        }
+    }
+}
+static void scene_veil(cui_ctx *ui, int f) {
+    if (f < 0) return;
+    frame_wrap(ui, body_veil);
+}
+
 static bool cb_saved;
 static int cb_scale = 1, cb_type;
 static void cb_result(cui_ctx *ui) {
@@ -4392,15 +4557,21 @@ int main(int argc, char **argv) {
         { "toggles", scene_toggles, 680, 150, true }, { "slider", scene_slider, 480, 170, true },
         { "inputs", scene_inputs, 680, 230, true }, { "textarea", scene_textarea, 540, 200, false },
         { "pickers", scene_pickers, 680, 130, false }, { "select", scene_select_open, 320, 330, true },
-        { "calendar", scene_calendar, 340, 360, true }, { "tabs", scene_tabs, 580, 160, true },
+        { "calendar", scene_calendar, 340, 360, true }, { "calendar-months", scene_calendar_months, 340, 360, true }, { "tabs", scene_tabs, 580, 160, true },
         { "navigation", scene_navigation, 620, 200, false }, { "sidebar", scene_sidebar, 260, 210, true },
         { "menu", scene_menu, 300, 290, true }, { "dialog", scene_dialog, 620, 340, true },
         { "toast", scene_toast, 420, 220, true }, { "tooltip", scene_tooltip, 260, 150, false },
         { "alerts", scene_alerts, 620, 210, true }, { "feedback", scene_feedback, 520, 220, false },
+        { "dither-progress", scene_dither_progress, 620, 150, true, false, CUI_ACCENT_NEUTRAL },
+        { "dither-spinners", scene_dither_spinners, 800, 860, true, false, CUI_ACCENT_NEUTRAL },
+        { "status-spinner", scene_status_spinner, 600, 170, true, false, CUI_ACCENT_NEUTRAL },
+        { "dither-skeleton", scene_dither_skeleton, 680, 210, true, false, CUI_ACCENT_NEUTRAL },
+        { "pattern-meter", scene_pattern_meter_hover, 660, 280, true },
         { "badges", scene_badges, 600, 160, true }, { "cards", scene_cards, 700, 230, true },
         { "empty-state", scene_empty, 580, 340, true }, { "table", scene_table, 680, 250, true },
         { "tree-list", scene_tree, 660, 230, false }, { "accordion", scene_accordion, 580, 200, false },
         { "chips", scene_chips, 520, 140, false }, { "line-chart", scene_line_chart, 740, 320, true },
+        { "dither-area", scene_dither_area, 740, 340, true },
         { "bar-donut", scene_bar_chart, 840, 290, true }, { "command-palette", scene_palette, 680, 460, true },
         { "icons", scene_icons, 1040, 1120, false },
         { "radio-cards", scene_radio_cards, 940, 170, true }, { "tag-otp", scene_tag_otp, 520, 330, true },
@@ -4471,7 +4642,7 @@ int main(int argc, char **argv) {
         { "dot-display", scene_dot_display, 420, 200, true, false, CUI_ACCENT_BLUE },
         { "grouped-toolbar", scene_grouped_toolbar, 620, 220, true }, { "format-bar", scene_format_bar, 640, 330, true, false, CUI_ACCENT_GREEN },
         { "live-cursors", scene_live_cursors, 760, 416, true }, { "canvas-controls", scene_canvas_controls, 760, 376, true },
-        { "result-card", scene_result_card, 440, 560, true }, { "selection-bar", scene_selection_bar, 600, 400, true, false, CUI_ACCENT_GREEN },
+        { "result-card", scene_result_card, 440, 560, true }, { "veil", scene_veil, 480, 330, true }, { "selection-bar", scene_selection_bar, 600, 400, true, false, CUI_ACCENT_GREEN },
         { "tw-studio", scene_tw_studio, 1200, 675, true, false, CUI_ACCENT_NEUTRAL }, { "tw-audio", scene_tw_audio, 960, 540, true, false, CUI_ACCENT_NEUTRAL },
         { "tw-markets", scene_tw_markets, 1200, 675, true, false, CUI_ACCENT_NEUTRAL }, { "tw-calendar", scene_tw_calendar, 1200, 675, true, false, CUI_ACCENT_NEUTRAL },
         { "status-tag", scene_status_tag, 620, 270, true }, { "ratio-slider", scene_ratio_slider, 620, 180, true },

@@ -676,3 +676,144 @@ int cui_checklist_ex(cui_ctx *ui, const char *id_str, cui_check_step *steps, int
     ui->last_id = id;
     return result;
 }
+
+/* ------------------------------------------------------------------------ */
+/* Veil                                                                     */
+/* ------------------------------------------------------------------------ */
+
+#define CUI__VEIL_T 0.28f        /* seconds to dissolve or to come back */
+#define CUI__VEIL_FPS 12.0f      /* steps a second of the moving noise: it is slow, so it needs no more frames */
+#define CUI__VEIL_MESH 16.0f     /* points between the noise samples; the density runs linearly between them */
+
+typedef struct { float q; bool init; } cui__veil_state;   /* q: 0 covered, 1 revealed */
+typedef struct cui__veil_build { struct cui__veil_build *prev; cui_id id; bool disabled; } cui__veil_build;
+typedef struct {
+    cui_id id;
+    float q, t, radius, focus;
+    bool catch_clicks;         /* covered: the veil takes the clicks over its content */
+    cui_color ground, dots;
+    const char *label, *hint;
+} cui__veil_paint;
+
+/* a slow, smooth field in 0..1 over the cells (x, y) at time t */
+static float cui__veil_noise(float x, float y, float t) {
+    float v = sinf(x * 0.21f + t * 0.9f) * sinf(y * 0.27f - t * 0.7f) + sinf((x + y) * 0.11f + t * 0.5f);
+    return 0.5f + 0.25f * v;
+}
+
+static void cui__paint_veil(cui_ctx *ui, cui_node *n, void *data) {
+    cui__veil_paint *p = data;
+    cui_rect r = n->rect;
+    if (p->q < 1 && r.w > 0 && r.h > 0) {
+        if (p->catch_clicks) {
+            cui_rect clip = ui->dl.clip_stack[ui->dl.clip_depth - 1];
+            float s = ui->scale;
+            cui_rect cp = { clip.x / s, clip.y / s, clip.w / s, clip.h / s };
+            cui__paint_add_hit(ui, p->id, cui__rect_intersect(cui__xform_rect(ui, r), cp), CUI_NF_INTERACTIVE | CUI_NF_FOCUSABLE);
+        }
+        cui__dither d;
+        memset(&d, 0, sizeof d);
+        d.origin = (cui_vec2){ r.x, r.y };
+        d.shape = r;
+        d.radius = CUI_CORNERS(p->radius);
+        d.floor = p->q;   /* revealing turns cells off in threshold order: a dissolve */
+        d.color = p->ground;
+        cui__draw_dither_rect(ui, &d, r, 1, 1, false);
+        /* the dots: a grid of noise samples, the density between them interpolated */
+        int cols = CUI_MAX(1, CUI_MIN(64, (int)ceilf(r.w / CUI__VEIL_MESH))), rows = CUI_MAX(1, CUI_MIN(64, (int)ceilf(r.h / CUI__VEIL_MESH)));
+        cui__dvert *v = cui__frame_alloc(ui, sizeof(cui__dvert) * (size_t)((cols + 1) * (rows + 1)));
+        uint32_t *idx = cui__frame_alloc(ui, sizeof(uint32_t) * (size_t)(cols * rows * 6));
+        for (int j = 0; j <= rows; j++)
+            for (int i = 0; i <= cols; i++) {
+                float x = r.x + r.w * (float)i / (float)cols, y = r.y + r.h * (float)j / (float)rows;
+                float nz = cui__veil_noise((x - r.x) * 0.5f, (y - r.y) * 0.5f, p->t);
+                v[j * (cols + 1) + i] = (cui__dvert){ x, y, 0.42f + 0.18f * (nz - 0.5f) };
+            }
+        int k = 0;
+        for (int j = 0; j < rows; j++)
+            for (int i = 0; i < cols; i++) {
+                uint32_t a = (uint32_t)(j * (cols + 1) + i), b = a + (uint32_t)(cols + 1);
+                idx[k++] = a; idx[k++] = a + 1; idx[k++] = b + 1;
+                idx[k++] = a; idx[k++] = b + 1; idx[k++] = b;
+            }
+        d.color = p->dots;
+        cui__draw_dither_mesh(ui, &d, v, (cols + 1) * (rows + 1), idx, k);
+        /* the caption fades with the veil */
+        float fs = cui__fs(ui, ui->theme.text_body), hs = cui__fs(ui, ui->theme.text_sm);
+        float lh = p->label ? cui__font_line_height(ui, CUI_FONT_MEDIUM, fs) : 0, hh = p->hint ? cui__font_line_height(ui, CUI_FONT_BODY, hs) : 0;
+        if ((p->label || p->hint) && lh + hh + 8 <= r.h) {
+            float cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f - (lh + hh) * 0.5f;
+            cui__push_xform(ui, 1, 0, 0, 1 - p->q, 0, 0);
+            cui_push_clip(ui, r);
+            if (p->label) cui__draw_text_at(ui, CUI_FONT_MEDIUM, fs, cx, cy + lh * 0.5f, CUI__AT_CENTER, CUI_C(ui, FOREGROUND), p->label, false);
+            if (p->hint) cui__draw_text_at(ui, CUI_FONT_BODY, hs, cx, cy + lh + hh * 0.5f, CUI__AT_CENTER, CUI_C(ui, TEXT_SECONDARY), p->hint, false);
+            cui_pop_clip(ui);
+            cui__pop_xform(ui);
+        }
+    }
+    cui__draw_focus_ring(ui, r, CUI_CORNERS(p->radius), p->focus);
+}
+
+bool cui_veil_begin_ex(cui_ctx *ui, const char *id_str, bool *revealed, const cui_veil_opts *o) {
+    cui_veil_opts d;
+    memset(&d, 0, sizeof d);
+    if (!o) o = &d;
+    cui_id id = cui_make_id(ui, id_str);
+    cui_interact r = cui__interact(ui, id, CUI_IF_FOCUSABLE);
+    cui__veil_state *st = cui_state(ui, id, sizeof *st);
+    bool shown = revealed && *revealed, changed = false;
+    if (!st->init) { st->q = shown ? 1.0f : 0.0f; st->init = true; }
+    /* a click reveals; covering again takes the keyboard, `toggle`, or the app */
+    if (revealed && r.clicked && (r.keyboard_activate || !shown || o->toggle)) { *revealed = shown = !shown; changed = true; }
+    float target = shown ? 1.0f : 0.0f;
+    if (ui->theme.motion <= 0) st->q = target;
+    else if (st->q != target) {
+        float step = ui->dt / (CUI__VEIL_T * CUI_MAX(1.0f, ui->theme.motion));
+        st->q = target > st->q ? CUI_MIN(target, st->q + step) : CUI_MAX(target, st->q - step);
+        ui->animating = true;
+    }
+    if (r.hovered && !shown) cui__set_cursor(ui, CUI_CURSOR_HAND);
+    int n = cui__node_new(ui, id);
+    cui_node *nd = &ui->nodes[n];
+    if (o->width.kind) nd->w = o->width;
+    nd->self_align = CUI__ALIGN_NOSTRETCH;
+    nd->flags |= CUI_NF_PAINT_AFTER;
+    cui__mark_interactive(ui, n, CUI_IF_FOCUSABLE);
+    cui__veil_paint *p = cui__frame_alloc(ui, sizeof *p);
+    p->id = id;
+    p->q = st->q;
+    p->catch_clicks = !shown || st->q < 1;
+    p->radius = o->radius;
+    p->focus = r.focus_visible ? 1.0f : 0.0f;
+    p->ground = cui__color_set(o->color) ? cui_color_of(ui, o->color) : CUI_C(ui, SURFACE_MUTED);
+    p->dots = cui_mix(p->ground, CUI_C(ui, FOREGROUND), 0.18f);
+    p->label = o->label ? cui__frame_strdup(ui, o->label, -1) : NULL;
+    p->hint = o->hint ? cui__frame_strdup(ui, o->hint, -1) : NULL;
+    if (st->q < 1 && ui->theme.motion > 0) {
+        /* the noise moves in steps, so a covered veil asks for a dozen frames a second, not every frame */
+        double steps = floor(ui->time * CUI__VEIL_FPS);
+        p->t = (float)fmod(steps / CUI__VEIL_FPS, 600.0);
+        cui__wakeup_after(ui, (float)((steps + 1) / CUI__VEIL_FPS - ui->time));
+    }
+    nd->paint = cui__paint_veil;
+    nd->paint_data = p;
+    cui__open(ui, n);
+    cui__veil_build *b = cui__frame_alloc(ui, sizeof *b);
+    b->prev = ui->building.veil;
+    b->id = id;
+    /* fully covered, the content is out of reach of the keyboard too; it is enabled again as soon as
+     * a reveal starts, and stays enabled while the veil comes back (the veil takes the clicks then) */
+    b->disabled = !shown && st->q <= 0;
+    if (b->disabled) cui_push_disabled(ui, true);
+    ui->building.veil = b;
+    return changed;
+}
+
+void cui_veil_end(cui_ctx *ui) {
+    cui__veil_build *b = ui->building.veil;
+    if (!b) return;
+    if (b->disabled) cui_pop_disabled(ui);
+    cui__close(ui);
+    ui->building.veil = b->prev;
+    ui->last_id = b->id;
+}

@@ -664,6 +664,48 @@ static void test_text_input(void) {
     cui_destroy(ui);
 }
 
+/* An empty field still has a caret. At offset 0 the bar stands just left of the
+ * text, in the field's padding, where the text clip used to cut it away. */
+typedef struct { char buf[64]; cui_id id; } blank_ctx;
+static void build_blank_field(cui_ctx *ui, void *u) {
+    blank_ctx *e = u;
+    cui_column(ui, .pad = 20) {
+        cui_input(ui, "empty", e->buf, sizeof e->buf, .width = CUI_PX(300));
+        e->id = cui_last_id(ui);
+    }
+}
+
+static int dark_pixels(cui_ctx *ui) {
+    const cui_draw_data *dd = cui_get_draw_data(ui);
+    size_t n = (size_t)dd->width_px * dd->height_px;
+    unsigned char *px = malloc(n * 4);
+    cui_sw_render(g_sw, dd, px, dd->width_px, dd->height_px, dd->width_px * 4, CUI_SW_RGBA);
+    int dark = 0;
+    for (size_t i = 0; i < n; i++) if (px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2] < 300) dark++;
+    free(px);
+    return dark;
+}
+
+static void test_empty_field_caret(void) {
+    printf("text input: an empty field draws a caret, and it blinks\n");
+    cui_ctx *ui = new_ctx();
+    blank_ctx e;
+    memset(&e, 0, sizeof e);
+    run(ui, build_blank_field, &e, 2);
+    cui_vec2 c = center(rect_of(ui, e.id));
+    click_at(ui, build_blank_field, &e, c.x, c.y);
+    CHECK(e.buf[0] == 0);
+    int lo = -1, hi = 0;
+    for (int i = 0; i < 70; i++) {   /* a little over one blink period */
+        run(ui, build_blank_field, &e, 1);
+        int dark = dark_pixels(ui);
+        if (lo < 0 || dark < lo) lo = dark;
+        if (dark > hi) hi = dark;
+    }
+    CHECK(hi > lo + 8);   /* the bar comes and goes inside the field */
+    cui_destroy(ui);
+}
+
 typedef struct { char buf[512]; char other[32]; int flags; cui_id id, other_id; } area_ctx;
 static void build_area(cui_ctx *ui, void *u) {
     area_ctx *a = u;
@@ -722,6 +764,247 @@ static void test_textarea_and_clear(void) {
     click_at(ui, build_area, &a, fr.x + fr.w / 3, fr.y + fr.h / 2);
     key(ui, build_area, &a, CUI_KEY_Z, CUI_MOD_PRIMARY);
     CHECK(strcmp(a.other, "keep me") == 0);
+    cui_destroy(ui);
+}
+
+static cui_rect g_ime_caret;
+static int g_ime_calls;
+static void ime_rect(void *u, cui_rect r) { (void)u; g_ime_caret = r; g_ime_calls++; }
+
+static void test_textarea_ime_caret(void) {
+    printf("text area: the IME is told the caret's line, not the whole area\n");
+    cui_ctx *ui = new_ctx();
+    cui_set_platform(ui, &(cui_platform_iface){ .set_clipboard = clip_set, .get_clipboard = clip_get, .set_text_input_rect = ime_rect });
+    area_ctx a;
+    memset(&a, 0, sizeof a);
+    strcpy(a.buf, "one\ntwo\nthree");
+    run(ui, build_area, &a, 2);
+    CHECK(g_ime_calls == 0);   /* nothing focused */
+    cui_rect area = rect_of(ui, a.id);
+    click_at(ui, build_area, &a, area.x + 12, area.y + 10);   /* on the first line */
+    CHECK(g_ime_calls > 0);
+    cui_rect first = g_ime_caret;
+    CHECK(first.h > 0 && first.h < area.h / 2);
+    CHECK(first.y >= area.y && first.y + first.h <= area.y + area.h);
+    key(ui, build_area, &a, CUI_KEY_DOWN, 0);
+    cui_rect second = g_ime_caret;
+    CHECK_NEAR(second.y - first.y, first.h, 0.01);   /* one line lower, as tall */
+    CHECK_NEAR(second.h, first.h, 0.01);
+    key(ui, build_area, &a, CUI_KEY_DOWN, 0);
+    key(ui, build_area, &a, CUI_KEY_END, 0);
+    cui_rect third = g_ime_caret;
+    CHECK_NEAR(third.y - first.y, 2 * first.h, 0.01);
+    CHECK(third.x > first.x + 10);   /* after "three" */
+    key(ui, build_area, &a, CUI_KEY_ENTER, 0);   /* a new, empty last line */
+    CHECK(strcmp(a.buf, "one\ntwo\nthree\n") == 0);
+    CHECK(g_ime_caret.y > third.y);   /* the area scrolls to keep it in view */
+    CHECK(g_ime_caret.y + g_ime_caret.h <= area.y + area.h);
+    CHECK(g_ime_caret.x < first.x + 12);
+    cui_destroy(ui);
+}
+
+/** Put a scrollable editor inside a viewport with room to scroll both ways. */
+static void build_nested_textarea(cui_ctx *ui, void *user) {
+    area_ctx *a = user;
+    cui_scroll(ui, .id = "page", .height = CUI_PX(180), .width = CUI_PX(320), .horizontal = true) {
+        cui_box(ui, .height = CUI_PX(80)) {}
+        cui_textarea(ui, "notes", a->buf, sizeof a->buf, .height = 80);
+        a->id = cui_last_id(ui);
+        cui_box(ui, .width = CUI_PX(520), .height = CUI_PX(400)) {}
+    }
+}
+
+/** Keep the editor in place until the wheel points past one of its edges. */
+static void test_nested_textarea_wheel(void) {
+    printf("text area: wheel routing in a scrolling page\n");
+    cui_ctx *ui = new_ctx();
+    area_ctx a = { .buf = "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine\nTen" };
+    run(ui, build_nested_textarea, &a, 2);
+    cui_scroll_to(ui, "page", 40);
+    run(ui, build_nested_textarea, &a, 2);
+    const cui_rect before = rect_of(ui, a.id);
+    cui_input_mouse_move(ui, before.x + before.w / 2, before.y + before.h / 2);
+    run(ui, build_nested_textarea, &a, 1);
+    const uint32_t unscrolled = frame_hash(ui);
+
+    cui_input_scroll(ui, 0, -1);
+    run(ui, build_nested_textarea, &a, 1);
+    const cui_rect after = rect_of(ui, a.id);
+    CHECK_NEAR(after.y, before.y, 0.01);
+    CHECK(frame_hash(ui) != unscrolled);
+
+    if (fabsf(after.y - before.y) < 0.01f) {
+        cui_input_scroll(ui, 0, -100);
+        run(ui, build_nested_textarea, &a, 1);
+        CHECK_NEAR(rect_of(ui, a.id).y, before.y, 0.01);
+        cui_input_scroll(ui, 0, -1);
+        run(ui, build_nested_textarea, &a, 1);
+        const float lower_edge = rect_of(ui, a.id).y;
+        CHECK(lower_edge < before.y);
+        cui_input_mouse_move(ui, before.x + before.w / 2, lower_edge + before.h / 2);
+        cui_input_scroll(ui, 0, 100);
+        run(ui, build_nested_textarea, &a, 1);
+        CHECK_NEAR(rect_of(ui, a.id).y, lower_edge, 0.01);
+        cui_input_scroll(ui, 0, 1);
+        run(ui, build_nested_textarea, &a, 1);
+        CHECK(rect_of(ui, a.id).y > lower_edge);
+    }
+    cui_destroy(ui);
+}
+
+/** A page whose canvas has zoom controls floating over it. */
+static void build_canvas_rail_page(cui_ctx *ui, void *user) {
+    cui_id *anchor = user;
+    static cui_node_view view;
+    cui_scroll(ui, .id = "page", .height = CUI_PX(180), .width = CUI_PX(320)) {
+        *anchor = cui_box_begin(ui, &(cui_box){ .id = "art", .width = CUI_PX(300), .height = CUI_PX(240) });
+        cui_box_end(ui);
+        cui_canvas_controls(ui, "zoom", &view);
+        cui_box(ui, .height = CUI_PX(400)) {}
+    }
+}
+
+/** The wheel over floating controls scrolls the page both ways: overlay nodes are not wheel targets. */
+static void test_canvas_rail_wheel(void) {
+    printf("canvas controls: the wheel over the rail scrolls the page\n");
+    cui_ctx *ui = new_ctx();
+    cui_id anchor = 0;
+    run(ui, build_canvas_rail_page, &anchor, 3);
+    cui_scroll_to(ui, "page", 40);
+    run(ui, build_canvas_rail_page, &anchor, 2);
+    cui_rect a = rect_of(ui, anchor);
+    cui_input_mouse_move(ui, a.x + a.w - 20, a.y + a.h / 2);
+    run(ui, build_canvas_rail_page, &anchor, 1);
+    cui_input_scroll(ui, 0, 1);
+    run(ui, build_canvas_rail_page, &anchor, 2);
+    CHECK(rect_of(ui, anchor).y > a.y + 1);
+    a = rect_of(ui, anchor);
+    cui_input_scroll(ui, 0, -1);
+    run(ui, build_canvas_rail_page, &anchor, 2);
+    CHECK(rect_of(ui, anchor).y < a.y - 1);
+    cui_destroy(ui);
+}
+
+/** A mixed wheel event scrolls the text vertically and the page horizontally. */
+static void test_nested_textarea_mixed_wheel(void) {
+    printf("text area: mixed-axis wheel and Shift routing\n");
+    cui_ctx *ui = new_ctx();
+    area_ctx a = { .buf = "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine\nTen" };
+    run(ui, build_nested_textarea, &a, 2);
+    cui_scroll_to(ui, "page", 40);
+    run(ui, build_nested_textarea, &a, 2);
+    const cui_rect before = rect_of(ui, a.id);
+    cui_input_mouse_move(ui, before.x + before.w / 2, before.y + before.h / 2);
+
+    cui_input_scroll(ui, -1, -1);
+    run(ui, build_nested_textarea, &a, 1);
+    const cui_rect mixed = rect_of(ui, a.id);
+    CHECK(mixed.x < before.x);
+    CHECK_NEAR(mixed.y, before.y, 0.01);
+
+    /* Scrolling back up must move the text toward its top before moving the page. */
+    cui_input_scroll(ui, 0, 1);
+    run(ui, build_nested_textarea, &a, 1);
+    CHECK_NEAR(rect_of(ui, a.id).y, mixed.y, 0.01);
+
+    const cui_rect before_shift = rect_of(ui, a.id);
+    cui_input_key(ui, CUI_KEY_NONE, false, CUI_MOD_SHIFT);
+    cui_input_scroll(ui, 0, -1);
+    run(ui, build_nested_textarea, &a, 1);
+    CHECK(rect_of(ui, a.id).x < before_shift.x);
+    CHECK_NEAR(rect_of(ui, a.id).y, before_shift.y, 0.01);
+    cui_destroy(ui);
+}
+
+/** Give the number field room for the draft and both step buttons. */
+static void build_number_edit(cui_ctx *ui, void *user) {
+    cui_number(ui, "quantity", user, 0, 99, .width = CUI_PX(240));
+}
+
+/** Commit a canonical draft and keep the previous value on invalid input. */
+static void test_number_edit_commit(void) {
+    printf("number field: clamp committed text and reject nonfinite input\n");
+    cui_ctx *ui = new_ctx();
+    double value = 3;
+    run(ui, build_number_edit, &value, 2);
+    key(ui, build_number_edit, &value, CUI_KEY_TAB, 0);
+    key(ui, build_number_edit, &value, CUI_KEY_A, CUI_MOD_PRIMARY);
+    type(ui, build_number_edit, &value, "999");
+    key(ui, build_number_edit, &value, CUI_KEY_ENTER, 0);
+    CHECK(value == 99);
+    key(ui, build_number_edit, &value, CUI_KEY_A, CUI_MOD_PRIMARY);
+    g_clip[0] = 0;
+    key(ui, build_number_edit, &value, CUI_KEY_C, CUI_MOD_PRIMARY);
+    if (strcmp(g_clip, "99") != 0) printf("  Committed draft: %s\n", g_clip);
+    CHECK(strcmp(g_clip, "99") == 0);
+
+    type(ui, build_number_edit, &value, "nan");
+    if (!isfinite(value)) printf("  Number field returned a nonfinite value\n");
+    CHECK(isfinite(value) && value == 99);
+    key(ui, build_number_edit, &value, CUI_KEY_ENTER, 0);
+    key(ui, build_number_edit, &value, CUI_KEY_A, CUI_MOD_PRIMARY);
+    g_clip[0] = 0;
+    key(ui, build_number_edit, &value, CUI_KEY_C, CUI_MOD_PRIMARY);
+    CHECK(strcmp(g_clip, "99") == 0);
+
+    type(ui, build_number_edit, &value, "7x");
+    CHECK(value == 99);
+    key(ui, build_number_edit, &value, CUI_KEY_TAB, 0);
+    key(ui, build_number_edit, &value, CUI_KEY_TAB, CUI_MOD_SHIFT);
+    key(ui, build_number_edit, &value, CUI_KEY_A, CUI_MOD_PRIMARY);
+    g_clip[0] = 0;
+    key(ui, build_number_edit, &value, CUI_KEY_C, CUI_MOD_PRIMARY);
+    CHECK(strcmp(g_clip, "99") == 0);
+    cui_destroy(ui);
+}
+
+/** Let the searchable popup own the only text editor in the frame. */
+typedef struct { int choice; bool searchable; } select_keys_ctx;
+static void build_searchable_select(cui_ctx *ui, void *user) {
+    select_keys_ctx *c = user;
+    const char *items[] = { "Alpha", "Beta" };
+    cui_select(ui, "choice", items, 2, &c->choice, .searchable = c->searchable);
+}
+
+/** Escape closes the search and leaves its trigger available to Enter, also
+ * while the list animates closed; Enter opens a plain select without picking. */
+static void test_searchable_select_reopen(void) {
+    printf("searchable select: keyboard reopening after Escape\n");
+    for (int animated = 0; animated < 2; animated++) {
+        cui_ctx *ui = new_ctx();
+        cui_set_reduced_motion(ui, !animated);
+        select_keys_ctx c = { .searchable = true };
+        run(ui, build_searchable_select, &c, 2);
+        key(ui, build_searchable_select, &c, CUI_KEY_TAB, 0);
+        key(ui, build_searchable_select, &c, CUI_KEY_DOWN, 0);
+        run(ui, build_searchable_select, &c, 20);
+        CHECK(cui_wants_keyboard(ui));
+        key(ui, build_searchable_select, &c, CUI_KEY_ESCAPE, 0);
+        run(ui, build_searchable_select, &c, 20);
+        CHECK(!cui_wants_keyboard(ui));
+        key(ui, build_searchable_select, &c, CUI_KEY_ENTER, 0);
+        run(ui, build_searchable_select, &c, 20);
+        CHECK(cui_wants_keyboard(ui));
+        CHECK(c.choice == 0);
+        /* picking an item also gives the keyboard back to the trigger */
+        key(ui, build_searchable_select, &c, CUI_KEY_DOWN, 0);
+        key(ui, build_searchable_select, &c, CUI_KEY_ENTER, 0);
+        run(ui, build_searchable_select, &c, 20);
+        CHECK(c.choice == 1 && !cui_wants_keyboard(ui));
+        key(ui, build_searchable_select, &c, CUI_KEY_ENTER, 0);
+        run(ui, build_searchable_select, &c, 20);
+        CHECK(cui_wants_keyboard(ui) && c.choice == 1);
+        cui_destroy(ui);
+    }
+    cui_ctx *ui = new_ctx();
+    select_keys_ctx c = { .searchable = false };
+    run(ui, build_searchable_select, &c, 2);
+    key(ui, build_searchable_select, &c, CUI_KEY_TAB, 0);
+    key(ui, build_searchable_select, &c, CUI_KEY_ENTER, 0);
+    run(ui, build_searchable_select, &c, 2);
+    key(ui, build_searchable_select, &c, CUI_KEY_DOWN, 0);
+    key(ui, build_searchable_select, &c, CUI_KEY_ENTER, 0);
+    CHECK(c.choice == 1);
     cui_destroy(ui);
 }
 
@@ -2166,11 +2449,13 @@ static void test_focus_trap(void) {
     cui_destroy(ui);
 }
 
-typedef struct { char tags[128]; char otp[8]; int otp_done; int held; cui_id tag_id, otp_id, hold_id; } extras_ctx;
+typedef struct { char tags[128]; char otp[8]; int max_tags, otp_done, held; cui_id tag_id, otp_id, hold_id; } extras_ctx;
+
+/** Use the same controls for ordinary editing and batched input. */
 static void build_extras(cui_ctx *ui, void *u) {
     extras_ctx *x = u;
     cui_column(ui, .pad = 20, .gap = 16, .width = CUI_PX(500)) {
-        cui_tag_input(ui, "tags", x->tags, sizeof x->tags);
+        cui_tag_input(ui, "tags", x->tags, sizeof x->tags, .max_tags = x->max_tags);
         x->tag_id = cui_last_id(ui);
         if (cui_otp_input(ui, "otp", x->otp, 4)) x->otp_done++;
         x->otp_id = cui_last_id(ui);
@@ -2229,6 +2514,20 @@ static void test_toast_deadline(void) {
     cui_destroy(ui);
 }
 
+/** One input event can fill the last slot but cannot create another tag. */
+static void test_tag_limit_batch(void) {
+    printf("tag input: enforce capacity for each separator\n");
+    cui_ctx *ui = new_ctx();
+    extras_ctx x = { .max_tags = 1 };
+    run(ui, build_extras, &x, 2);
+    key(ui, build_extras, &x, CUI_KEY_TAB, 0);
+    type(ui, build_extras, &x, "one,two,");
+    if (strcmp(x.tags, "one") != 0) printf("  Tags after one input event: %s\n", x.tags);
+    CHECK(strcmp(x.tags, "one") == 0);
+    cui_destroy(ui);
+}
+
+/** Ordinary editing, replacement of complete codes, and held activation. */
 static void test_extras(void) {
     printf("extras: tag input, one time code, hold to confirm\n");
     cui_ctx *ui = new_ctx();
@@ -2260,6 +2559,13 @@ static void test_extras(void) {
     snprintf(g_clip, sizeof g_clip, " 7-7-7-7 ");
     key(ui, build_extras, &x, CUI_KEY_V, CUI_MOD_PRIMARY);
     CHECK(strcmp(x.otp, "7777") == 0 && x.otp_done == 2);
+    snprintf(g_clip, sizeof g_clip, "8B9C");
+    key(ui, build_extras, &x, CUI_KEY_V, CUI_MOD_PRIMARY);
+    CHECK(strcmp(x.otp, "8B9C") == 0);
+    if (x.otp_done != 3) printf("  Completion count after replacing a complete code: %d\n", x.otp_done);
+    CHECK(x.otp_done == 3);
+    key(ui, build_extras, &x, CUI_KEY_V, CUI_MOD_PRIMARY);
+    CHECK(x.otp_done == 3);
     /* hold: a short press does nothing, a long one fires once */
     cui_vec2 hc = center(rect_of(ui, x.hold_id));
     click_at(ui, build_extras, &x, hc.x, hc.y);
@@ -7047,6 +7353,143 @@ static void test_strings(void) {
     cui_destroy(ui);
 }
 
+/* ---- syntax colors: SQL ---- */
+typedef struct { const char *src, *lang; } sqlc_ctx;
+static void build_sqlc(cui_ctx *ui, void *u) {
+    sqlc_ctx *c = u;
+    cui_column(ui, .pad = 10) { cui_code_block(ui, "q", c->src, .lang = c->lang, .no_header = true); }
+}
+static bool has_color(cui_ctx *ui, cui_color want) {
+    const cui_draw_data *d = cui_get_draw_data(ui);
+    for (int i = 0; i < d->vertex_count; i++) {
+        cui_color k = d->vertices[i].color;
+        if (k.r == want.r && k.g == want.g && k.b == want.b && k.a == want.a) return true;
+    }
+    return false;
+}
+/** Does this source, in this language, draw anything in the color? */
+static bool code_has(const char *lang, const char *src, cui_color want) {
+    cui_ctx *ui = new_ctx();
+    sqlc_ctx c = { src, lang };
+    run(ui, build_sqlc, &c, 2);
+    bool r = has_color(ui, want);
+    cui_destroy(ui);
+    return r;
+}
+/** SQL keywords match in any case, -- and block comments hide them, and other languages stay case-sensitive. */
+static void test_sql_colors(void) {
+    printf("syntax colors: SQL\n");
+    cui_color kw = cui_oklch(0.52f, 0.20f, 305, 1), ty = cui_oklch(0.52f, 0.11f, 200, 1), cn = cui_oklch(0.58f, 0.16f, 50, 1);
+    CHECK(code_has("sql", "SELECT id", kw));
+    CHECK(code_has("sql", "select id", kw));
+    CHECK(code_has("sql", "Select id", kw));
+    CHECK(!code_has("text", "SELECT id", kw));
+    CHECK(!code_has("sql", "selected id", kw));                 /* whole words only */
+    CHECK(code_has("sql", "x VARCHAR", ty));
+    CHECK(!code_has("sql", "x Users", ty));                     /* a capital is not a type in SQL */
+    CHECK(code_has("sql", "x IS NULL", cn));
+    CHECK(code_has("sql", "x = true", cn));
+    CHECK(!code_has("sql", "x -- SELECT", kw));                 /* a line comment */
+    CHECK(!code_has("sql", "/* a\nSELECT */ x", kw));          /* a block comment across lines */
+    CHECK(code_has("sql", "/* a */ SELECT", kw));
+    CHECK(code_has("c", "if x", kw));
+    CHECK(!code_has("c", "IF x", kw));                          /* C keeps its case */
+}
+
+/* ---- calendar: months and years ---- */
+/* the draw without texture coordinates, which depend on the order glyphs entered the atlas */
+static uint64_t shape_hash(cui_ctx *ui) {
+    const cui_draw_data *d = cui_get_draw_data(ui);
+    uint64_t h = 1469598103934665603ull;
+    for (int i = 0; i < d->vertex_count; i++) {
+        cui_vertex v = d->vertices[i];
+        v.u = v.v = 0;
+        const unsigned char *b = (const unsigned char *)&v;
+        for (size_t k = 0; k < sizeof v; k++) h = (h ^ b[k]) * 1099511628211ull;
+    }
+    return h;
+}
+typedef struct { cui_date d; bool changed; } calpick_ctx;
+static void build_calpick(cui_ctx *ui, void *u) {
+    calpick_ctx *c = u;
+    cui_column(ui, .pad = 10) { if (cui_calendar(ui, "cal", &c->d)) c->changed = true; }
+}
+static void tab_n(cui_ctx *ui, build_fn fn, void *u, int n) { for (int i = 0; i < n; i++) key(ui, fn, u, CUI_KEY_TAB, 0); }
+/** The title opens the months, the year opens twelve years, and a choice goes back down to the days. */
+static void test_calendar_years(void) {
+    printf("calendar: months and years from the title\n");
+    cui_ctx *ui = new_ctx();
+    calpick_ctx c = { { 2026, 11, 14 }, false };
+    run(ui, build_calpick, &c, 3);
+    cui_id cal = cui_make_id(ui, "cal");
+    cui_rect days = rect_of(ui, cal);
+    uint64_t days_hash = shape_hash(ui);
+    tab_n(ui, build_calpick, &c, 1);                 /* the title */
+    key(ui, build_calpick, &c, CUI_KEY_ENTER, 0);    /* the months of 2026 */
+    run(ui, build_calpick, &c, 2);
+    cui_rect months = rect_of(ui, cal);
+    CHECK(shape_hash(ui) != days_hash);
+    CHECK_NEAR(months.w, days.w, 0.01);              /* the same size in every view */
+    CHECK_NEAR(months.h, days.h, 0.01);
+    tab_n(ui, build_calpick, &c, 5);                 /* previous, next, Jan, Feb, Mar */
+    key(ui, build_calpick, &c, CUI_KEY_ENTER, 0);    /* March 2026, the value unchanged */
+    CHECK(!c.changed);
+    CHECK(c.d.year == 2026 && c.d.month == 11 && c.d.day == 14);
+    click_at(ui, build_calpick, &c, 400, 400);       /* drop the focus ring */
+    run(ui, build_calpick, &c, 2);
+    uint64_t march = shape_hash(ui);
+    {
+        cui_ctx *ref = new_ctx();
+        calpick_ctx rc = { { 2026, 3, 0 }, false };  /* a calendar that opens on March 2026 with no day chosen */
+        run(ref, build_calpick, &rc, 3);
+        CHECK(shape_hash(ref) == march);
+        cui_destroy(ref);
+    }
+    /* the years: two Enters on the title, a page back, then 2010, May and the 15th */
+    tab_n(ui, build_calpick, &c, 1);
+    key(ui, build_calpick, &c, CUI_KEY_ENTER, 0);    /* months */
+    key(ui, build_calpick, &c, CUI_KEY_ENTER, 0);    /* 2016 to 2027 */
+    tab_n(ui, build_calpick, &c, 1);
+    key(ui, build_calpick, &c, CUI_KEY_ENTER, 0);    /* earlier: 2004 to 2015 */
+    tab_n(ui, build_calpick, &c, 8);                 /* next, 2004 ... 2010 */
+    key(ui, build_calpick, &c, CUI_KEY_ENTER, 0);    /* the months of 2010, the focus on the title */
+    tab_n(ui, build_calpick, &c, 7);                 /* previous, next, Jan ... May */
+    key(ui, build_calpick, &c, CUI_KEY_ENTER, 0);    /* May 2010 */
+    CHECK(!c.changed);
+    tab_n(ui, build_calpick, &c, 2 + 20);            /* previous, next, then 1 May 2010 is a Saturday: the 15th is the 20th day cell */
+    key(ui, build_calpick, &c, CUI_KEY_ENTER, 0);
+    CHECK(c.changed);
+    CHECK(c.d.year == 2010 && c.d.month == 5 && c.d.day == 15);
+    cui_destroy(ui);
+}
+
+typedef struct { cui_date d; cui_id field; } dpick_ctx;
+static void build_dpick(cui_ctx *ui, void *u) {
+    dpick_ctx *c = u;
+    cui_column(ui, .pad = 10) { cui_date_picker(ui, "dp", &c->d); c->field = cui_last_id(ui); }
+}
+/** A picker that closes in the months view opens on the days again. */
+static void test_date_picker_reopens_on_days(void) {
+    printf("date picker: opens on the days again\n");
+    cui_ctx *ui = new_ctx();
+    dpick_ctx c = { { 2026, 11, 14 }, 0 };
+    run(ui, build_dpick, &c, 3);
+    cui_vec2 f = center(rect_of(ui, c.field));
+    click_at(ui, build_dpick, &c, f.x, f.y);
+    run(ui, build_dpick, &c, 30);
+    uint64_t opened = shape_hash(ui);
+    tab_n(ui, build_dpick, &c, 1);                   /* from the field to the calendar's title */
+    key(ui, build_dpick, &c, CUI_KEY_ENTER, 0);
+    run(ui, build_dpick, &c, 30);
+    CHECK(shape_hash(ui) != opened);                 /* the months */
+    key(ui, build_dpick, &c, CUI_KEY_ESCAPE, 0);
+    run(ui, build_dpick, &c, 30);
+    click_at(ui, build_dpick, &c, f.x, f.y);
+    run(ui, build_dpick, &c, 30);
+    CHECK(shape_hash(ui) == opened);
+    cui_destroy(ui);
+}
+
 /* ---- month calendar ---- */
 typedef struct { cui_date month, sel; const cui_month_event *ev; int n; cui_month_result r; cui_rect gr; float w; } mc_ctx;
 static void build_mc(cui_ctx *ui, void *u) {
@@ -7852,7 +8295,14 @@ int main(void) {
     test_toggles_and_slider();
     test_text_input();
     test_disabled_password_reveal();
+    test_empty_field_caret();
     test_textarea_and_clear();
+    test_textarea_ime_caret();
+    test_nested_textarea_wheel();
+    test_nested_textarea_mixed_wheel();
+    test_canvas_rail_wheel();
+    test_number_edit_commit();
+    test_searchable_select_reopen();
     test_more_actions();
     test_toggle_group_arrows();
     test_more_inputs();
@@ -7861,6 +8311,9 @@ int main(void) {
     test_swipe();
     test_date_math();
     test_strings();
+    test_sql_colors();
+    test_calendar_years();
+    test_date_picker_reopens_on_days();
     test_pickers();
     test_disclosure();
     test_confirm_popover_keyboard();
@@ -7899,6 +8352,7 @@ int main(void) {
     test_dialog_escape_after_edit();
     test_menu();
     test_focus_trap();
+    test_tag_limit_batch();
     test_extras();
     test_toast_deadline();
     test_reorder();

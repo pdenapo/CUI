@@ -639,7 +639,8 @@ typedef struct cui_input_opts {
 
 /* Single line text field. Returns CUI_CHANGED / CUI_SUBMITTED (Enter) flags. */
 CUI_API int cui_input_ex(cui_ctx *ui, const char *id, char *buf, size_t cap, const cui_input_opts *opts);
-/* Multi-line text area with word wrap. */
+/* Multi-line text area with word wrap. The wheel scrolls the text first and
+ * goes to the enclosing scroll view at the text area's edges. */
 CUI_API int cui_textarea_ex(cui_ctx *ui, const char *id, char *buf, size_t cap, const cui_input_opts *opts);
 /* Search field with a search icon and a clear button. */
 CUI_API int cui_search_ex(cui_ctx *ui, const char *id, char *buf, size_t cap, const cui_input_opts *opts);
@@ -653,6 +654,8 @@ typedef struct cui_number_opts {
     cui_size width;
     const char *suffix;        /* muted text after the value, before the - and + buttons, e.g. "kg" */
 } cui_number_opts;
+/* A bounded number field. Only complete finite drafts update the value.
+ * Enter or loss of focus shows the accepted value using opts.decimals. */
 CUI_API bool cui_number_ex(cui_ctx *ui, const char *id, double *value, double min, double max, const cui_number_opts *opts);
 
 /* ------------------------------------------------------------------------ */
@@ -668,6 +671,8 @@ typedef struct cui_select_opts {
     bool disabled;
     cui_size width;
 } cui_select_opts;
+/* Enter opens the list or picks the highlighted item. A searchable select
+ * returns focus to its trigger when its list closes. */
 CUI_API bool cui_select_ex(cui_ctx *ui, const char *id, const char *const *items, int count, int *index, const cui_select_opts *opts);
 
 typedef struct cui_date { int year, month, day; } cui_date;   /* month 1..12 */
@@ -840,10 +845,75 @@ CUI_API bool cui_alert_ex(cui_ctx *ui, const char *title, const cui_alert_opts *
 /* Feedback and display                                                     */
 /* ------------------------------------------------------------------------ */
 
-typedef struct cui_progress_opts { int _; bool indeterminate; cui_tone tone; float height; const char *label; bool show_value; cui_size width; } cui_progress_opts;
+typedef struct cui_progress_opts {
+    int _;
+    bool indeterminate;        /* no value: a segment (or with `dither`, a soft band of dots) travels the track */
+    cui_tone tone;
+    float height;              /* points, default 6 (8 with `dither`) */
+    const char *label;         /* a row above the bar with this name */
+    bool show_value;           /* a whole percentage at the end of that row */
+    cui_size width;
+    bool dither;               /* drawn in dots: the fill dissolves over 60 points past its edge, and the
+                                * pattern drifts forward while the bar is not full; reduced motion holds it still */
+} cui_progress_opts;
 CUI_API void cui_progress_ex(cui_ctx *ui, float value, const cui_progress_opts *opts);
-CUI_API void cui_spinner(cui_ctx *ui, float size);
+/* Spinner: says that something is happening, for as long as you call it. `size` is its
+ * height in points (20 when 0). The default style is a ring with a sweeping arc; the others
+ * are drawn in dots on an 8x8 ordered dither, one point a dot below 32 points tall and two
+ * from there, and each fits a kind of wait:
+ *
+ *     cui_spinner(ui, 20);                                        the ring
+ *     cui_spinner(ui, 14, .style = CUI_SPINNER_COMET);            inline, in a button or a chip
+ *     cui_spinner(ui, 56, .style = CUI_SPINNER_RADAR);            searching a network
+ *     cui_spinner(ui, 32, .style = CUI_SPINNER_UPLOAD, .color = CUI_COLOR_ACCENT);
+ *
+ * A dither spinner asks for a frame only when its dots move (12 to 30 times a second by
+ * style) and only while it is on screen; reduced motion holds each style on a still frame. */
+typedef enum cui_spinner_style {
+    CUI_SPINNER_ARC = 0,       /* a ring with an arc sweeping round it */
+    CUI_SPINNER_COMET,         /* a ring of dots with a head and a tail that thins out dot by dot */
+    CUI_SPINNER_DOT_MATRIX,    /* a 5x5 grid of dots with a wave running through it, for dense layouts */
+    CUI_SPINNER_FILL_DRAIN,    /* a tile that fills from the bottom, then dissolves: a step of a job */
+    CUI_SPINNER_RADAR,         /* a sweep round a dial; points light up as it passes: searching, scanning */
+    CUI_SPINNER_RIPPLE,        /* rings spreading from a dot: connecting, pairing, waiting for the other side */
+    CUI_SPINNER_UPLOAD,        /* chevrons streaming up: sending */
+    CUI_SPINNER_DOWNLOAD,      /* chevrons streaming down: receiving */
+    CUI_SPINNER_TRANSFER,      /* both, side by side: syncing both ways */
+    CUI_SPINNER_ORBIT,         /* two dots circling, their trails dissolving: syncing */
+    CUI_SPINNER_BOUNCE,        /* three bouncing dots with short trails: typing, a chat reply */
+    CUI_SPINNER_SCAN,          /* a scan line reading a page: indexing, importing */
+    CUI_SPINNER_PULSE,         /* a soft disc breathing in density: recording, live */
+    CUI_SPINNER_SPIRAL,        /* three arms turning: a long, calm background wait */
+    CUI_SPINNER_PLASMA         /* slow moving noise in a tile: generating an image or audio */
+} cui_spinner_style;
+typedef struct cui_spinner_opts {
+    int _;
+    cui_spinner_style style;
+    cui_color color;           /* default the secondary text color for the ring, the text color for dots */
+    cui_color track;           /* the dots' base (a comet's ring, a dot matrix's dots), default `color` at 12% */
+} cui_spinner_opts;
+/* most styles are square; upload and download are 25/32 as wide as tall, transfer 50/32, bounce 40/28, scan 28/32 */
+CUI_API void cui_spinner_ex(cui_ctx *ui, float size, const cui_spinner_opts *opts);
+CUI_API void (cui_spinner)(cui_ctx *ui, float size);   /* the ring; the macro below calls cui_spinner_ex */
 CUI_API void cui_skeleton(cui_ctx *ui, cui_size width, float height);
+/* Skeleton group: placeholders for content that is loading, built inside it with
+ * cui_skeleton (in rows and columns as the content will be), share one shine that passes
+ * over them together. With `dither` they are drawn in dots and a band of brighter dots
+ * travels over them, asking for 20 frames a second while on screen; reduced motion holds
+ * the band still. Groups nest.
+ *
+ *     cui_skeleton_group(ui, .dither = true) {
+ *         cui_row(ui, .gap = 10) { cui_skeleton(ui, CUI_PX(20), 20); cui_skeleton(ui, CUI_PCT(55), 6); }
+ *         cui_skeleton(ui, CUI_FILL, 6);
+ *     } */
+typedef struct cui_skeleton_group_opts {
+    int _;
+    bool dither;               /* in dots, with a band of brighter dots passing over them */
+    cui_size width;            /* default: fill */
+    float gap;                 /* between what is built inside, default 8 */
+} cui_skeleton_group_opts;
+CUI_API void cui_skeleton_group_begin_ex(cui_ctx *ui, const cui_skeleton_group_opts *opts);
+CUI_API void cui_skeleton_group_end(cui_ctx *ui);
 
 typedef struct cui_badge_opts {
     int _;
@@ -985,18 +1055,46 @@ typedef struct cui_chart_opts {
     bool area;                 /* fill under lines */
     bool no_grid;
     bool no_legend;
-    bool stacked;              /* bar chart */
+    bool stacked;              /* bars stack in one column; lines stack on the series before them */
     bool smooth;               /* curved lines */
     const char *format;        /* value format for axis and tooltip, default "%.0f" */
     float min, max;            /* fixed y range when min != max */
     const cui_chart_annotation *annotations;   /* lines and points drawn over the chart (line and bar charts) */
     int annotation_count;      /* number of `annotations` */
+    bool dither;               /* line chart: every series filled with dots that thin out from its line to the
+                                * bottom of its band (implies `area`); with `stacked`, bands never mix colors */
 } cui_chart_opts;
 CUI_API void cui_line_chart_ex(cui_ctx *ui, const char *id, const cui_series *series, int count, const cui_chart_opts *opts);
 CUI_API void cui_bar_chart_ex(cui_ctx *ui, const char *id, const cui_series *series, int count, const cui_chart_opts *opts);
 CUI_API void cui_donut_chart_ex(cui_ctx *ui, const char *id, const float *values, const char *const *labels, int count, const cui_chart_opts *opts);
 CUI_API void cui_sparkline(cui_ctx *ui, const float *values, int count, cui_size width, float height, cui_color color);
 CUI_API void cui_gauge(cui_ctx *ui, const char *label, float value, float size);
+
+/* Pattern meter: a stacked usage bar (storage, budgets, quotas) whose parts differ in color
+ * and in the density of their dots, so it still reads in grayscale, in print and without
+ * telling hues apart. One dot of space parts the parts, and the rest of `total` is free
+ * space in the track color. Hovering a part, or its legend entry, steps the others back and
+ * shows its name, value and share above the bar; the keyboard does the same with Left and
+ * Right. Returns the part shown, or -1. */
+typedef struct cui_meter_part {
+    const char *name;          /* in the legend and the readout */
+    float value;               /* in the meter's units */
+    cui_color color;           /* default: the series palette, in order */
+    float density;             /* share of dots lit, 0..1; 0 takes the next of 1, 0.66, 0.42, 0.24, 0.14, 0.08 */
+} cui_meter_part;
+typedef struct cui_pattern_meter_opts {
+    int _;
+    float total;               /* the whole bar; 0 means the sum of the parts (no free space) */
+    const char *label;         /* the title over the bar, e.g. "Storage" */
+    const char *unit;          /* after every value, e.g. "GB" */
+    const char *format;        /* printf format of a value, default "%g" */
+    const char *free_label;    /* the legend entry of the free space, default "Free"; "" leaves it out */
+    bool grayscale;            /* every part in the foreground color, told apart by density alone */
+    bool no_legend;
+    float height;              /* points, default 18 */
+    cui_size width;            /* default: fill */
+} cui_pattern_meter_opts;
+CUI_API int cui_pattern_meter_ex(cui_ctx *ui, const char *id, const cui_meter_part *parts, int count, const cui_pattern_meter_opts *opts);
 
 /* Images */
 CUI_API cui_texture cui_image_create(cui_ctx *ui, int w, int h, const void *rgba);
@@ -1085,10 +1183,12 @@ typedef struct cui_tag_opts {
     int max_tags;              /* most tags the field holds; once reached it takes no more typing. 0 means no limit */
     cui_size width;
 } cui_tag_opts;
+/* max_tags applies to every tag, including a batch separated by commas. */
 CUI_API bool cui_tag_input_ex(cui_ctx *ui, const char *id, char *buf, size_t cap, const cui_tag_opts *opts);
 
 /* One time code input: `length` boxes; code must hold length + 1 bytes.
- * Returns true when all boxes are filled (once per change). */
+ * Returns true when all boxes are filled, including when a paste replaces
+ * one complete code with a different complete code. */
 CUI_API bool cui_otp_input(cui_ctx *ui, const char *id, char *code, int length);
 
 /* Connected buttons. Put buttons between begin and end. */
@@ -1191,6 +1291,23 @@ typedef struct cui_status_button_opts {
     cui_control_size size;
 } cui_status_button_opts;
 CUI_API bool cui_status_button_ex(cui_ctx *ui, const char *label, cui_status status, const cui_status_button_opts *opts);
+
+/* Status spinner: a dither ring while the status is busy that resolves when the work ends: it
+ * fills to a disc in the success color with a check, or the danger color with a cross, holds
+ * it for a moment and dissolves away. It keeps its space throughout. Returns true while it
+ * shows something, so an app can stop calling it after a result.
+ *
+ *     cui_status_spinner(ui, "save", saving ? CUI_STATUS_BUSY : ok ? CUI_STATUS_SUCCESS : CUI_STATUS_ERROR);
+ *
+ * Idle shows nothing. Reduced motion shows the ring still and the result at once. */
+typedef struct cui_status_spinner_opts {
+    int _;
+    float size;                /* points, default 20 */
+    cui_color color;           /* the ring while busy, default the text color */
+    bool keep;                 /* the check or cross stays instead of dissolving away */
+} cui_status_spinner_opts;
+CUI_API bool cui_status_spinner_ex(cui_ctx *ui, const char *id, cui_status status, const cui_status_spinner_opts *opts);
+#define cui_status_spinner(ui, id, status, ...) cui_status_spinner_ex((ui), (id), (status), CUI__OPTS(cui_status_spinner_opts, __VA_ARGS__))
 
 /* Reactions: icon pills with counts. Clicking toggles `active` and adjusts
  * the count. Returns the index that changed, or -1. */
@@ -1477,11 +1594,11 @@ CUI_API bool cui_file_picker_ex(cui_ctx *ui, const char *id, bool *open, char *o
 /* ------------------------------------------------------------------------ */
 
 /* Code block with syntax highlighting (lang: "c", "cpp", "js", "ts",
- * "python", "rust", "go", "json", "shell", or "text" for none), line numbers, a title bar and a
+ * "python", "rust", "go", "json", "shell", "sql", or "text" for none), line numbers, a title bar and a
  * copy button. Long lines scroll sideways. */
 typedef struct cui_code_opts {
     int _;
-    const char *lang;          /* "c", "cpp", "js", "ts", "python", "rust", "go", "json", "shell" or "text" (no colors); shown in the title bar */
+    const char *lang;          /* "c", "cpp", "js", "ts", "python", "rust", "go", "json", "shell", "sql" or "text" (no colors); shown in the title bar */
     const char *title;         /* e.g. a file name */
     bool line_numbers;         /* a column of line numbers on the left */
     int highlight_from, highlight_to;   /* 1 based line range to emphasize */
@@ -1590,7 +1707,7 @@ CUI_API bool cui_markdown_apply_task(char *text, const cui_markdown_result *resu
 typedef struct cui_text_mark { int start, end; int color; } cui_text_mark;
 typedef struct cui_code_editor_opts {
     int _;
-    const char *lang;          /* as cui_code_block: "c", "cpp", "js", "ts", "python", "rust", "go", "json", "shell"; "text" for none */
+    const char *lang;          /* as cui_code_block: "c", "cpp", "js", "ts", "python", "rust", "go", "json", "shell", "sql"; "text" for none */
     cui_size width;            /* default fill */
     float height;              /* default 320; negative fills the space */
     float size;                /* font size, default 13 */
@@ -2658,6 +2775,30 @@ typedef struct cui_checklist_opts {
     const char *description;
 } cui_checklist_opts;
 CUI_API int cui_checklist_ex(cui_ctx *ui, const char *id, cui_check_step *steps, int count, const cui_checklist_opts *opts);
+
+/* Veil: covers what is built inside it (a picture, a secret such as an API key, a spoiler)
+ * with a slowly moving dither in muted tones that keeps its space. A click, or Enter or
+ * Space, reveals it: the veil dissolves dot by dot in about a quarter of a second, and
+ * comes back the same way when *revealed is set to false again. While covered, the content
+ * takes no clicks and no keyboard focus. Reduced motion holds the noise still and reveals at once.
+ *
+ *     static bool shown;
+ *     cui_veil(ui, "photo", &shown, .label = "Sensitive image", .hint = "Click to show", .toggle = true) {
+ *         cui_image(ui, tex, .width = CUI_PX(240), .height = CUI_PX(150));
+ *     }
+ *
+ * cui_veil_begin_ex returns true on the frame a click or a key changed *revealed. */
+typedef struct cui_veil_opts {
+    int _;
+    const char *label;         /* a line in the middle of the veil, e.g. "Sensitive image"; `NULL` for none */
+    const char *hint;          /* a smaller line under it, e.g. "Click to show" */
+    bool toggle;               /* a click on the revealed content covers it again */
+    float radius;              /* corners of the veil, default 0 */
+    cui_color color;           /* the veil's ground, default the muted surface; its dots are a step toward the text color */
+    cui_size width;            /* default: the content's width */
+} cui_veil_opts;
+CUI_API bool cui_veil_begin_ex(cui_ctx *ui, const char *id, bool *revealed, const cui_veil_opts *opts);
+CUI_API void cui_veil_end(cui_ctx *ui);
 
 /* ------------------------------------------------------------------------ */
 /* Pickers                                                                  */
@@ -4814,7 +4955,8 @@ CUI_API float cui_animate_spring(cui_ctx *ui, cui_id id, float target, float dur
 /* ------------------------------------------------------------------------ */
 
 /* Vertex shading modes. See docs/rendering.md for the reference shader. */
-enum { CUI_SHADE_TEXT = 0, CUI_SHADE_RRECT = 1, CUI_SHADE_SHADOW = 2, CUI_SHADE_IMAGE = 3, CUI_SHADE_SOLID = 4 };
+enum { CUI_SHADE_TEXT = 0, CUI_SHADE_RRECT = 1, CUI_SHADE_SHADOW = 2, CUI_SHADE_IMAGE = 3, CUI_SHADE_SOLID = 4,
+       CUI_SHADE_DITHER = 5   /* ordered dither: dots of border_color where border <= threshold(u, v) < color.a */ };
 
 typedef struct cui_vertex {
     float x, y;            /* position in pixels */
@@ -4903,6 +5045,8 @@ CUI_API const cui_draw_data *cui_get_draw_data(cui_ctx *ui);
 #define cui_toast(ui, title, ...)           cui_toast_ex((ui), (title), CUI__OPTS(cui_toast_opts, __VA_ARGS__))
 #define cui_alert(ui, title, ...)           cui_alert_ex((ui), (title), CUI__OPTS(cui_alert_opts, __VA_ARGS__))
 #define cui_progress(ui, value, ...)        cui_progress_ex((ui), (value), CUI__OPTS(cui_progress_opts, __VA_ARGS__))
+#define cui_spinner(ui, size, ...)          cui_spinner_ex((ui), (size), CUI__OPTS(cui_spinner_opts, __VA_ARGS__))
+#define cui_skeleton_group(ui, ...)         CUI__SCOPE(cui_skeleton_group_begin_ex((ui), CUI__OPTS(cui_skeleton_group_opts, __VA_ARGS__)), cui_skeleton_group_end(ui))
 #define cui_badge(ui, text, ...)            cui_badge_ex((ui), (text), CUI__OPTS(cui_badge_opts, __VA_ARGS__))
 #define cui_avatar(ui, name, ...)           cui_avatar_ex((ui), (name), CUI__OPTS(cui_avatar_opts, __VA_ARGS__))
 #define cui_empty_state(ui, title, ...)     cui_empty_state_ex((ui), (title), CUI__OPTS(cui_empty_opts, __VA_ARGS__))
@@ -4915,6 +5059,7 @@ CUI_API const cui_draw_data *cui_get_draw_data(cui_ctx *ui);
 #define cui_line_chart(ui, id, s, n, ...)   cui_line_chart_ex((ui), (id), (s), (n), CUI__OPTS(cui_chart_opts, __VA_ARGS__))
 #define cui_bar_chart(ui, id, s, n, ...)    cui_bar_chart_ex((ui), (id), (s), (n), CUI__OPTS(cui_chart_opts, __VA_ARGS__))
 #define cui_donut_chart(ui, id, v, l, n, ...) cui_donut_chart_ex((ui), (id), (v), (l), (n), CUI__OPTS(cui_chart_opts, __VA_ARGS__))
+#define cui_pattern_meter(ui, id, parts, n, ...) cui_pattern_meter_ex((ui), (id), (parts), (n), CUI__OPTS(cui_pattern_meter_opts, __VA_ARGS__))
 #define cui_image(ui, tex, ...)             cui_image_ex((ui), (tex), CUI__OPTS(cui_image_opts, __VA_ARGS__))
 #define cui_radio_cards(ui, id, ch, n, idx, ...) cui_radio_cards_ex((ui), (id), (ch), (n), (idx), CUI__OPTS(cui_radio_cards_opts, __VA_ARGS__))
 #define cui_tag_input(ui, id, buf, cap, ...) cui_tag_input_ex((ui), (id), (buf), (cap), CUI__OPTS(cui_tag_opts, __VA_ARGS__))
@@ -4984,6 +5129,7 @@ CUI_API const cui_draw_data *cui_get_draw_data(cui_ctx *ui);
 #define cui_banner(ui, text, open, ...)     cui_banner_ex((ui), (text), (open), CUI__OPTS(cui_banner_opts, __VA_ARGS__))
 #define cui_countdown(ui, id, seconds, ...) cui_countdown_ex((ui), (id), (seconds), CUI__OPTS(cui_countdown_opts, __VA_ARGS__))
 #define cui_checklist(ui, id, steps, count, ...) cui_checklist_ex((ui), (id), (steps), (count), CUI__OPTS(cui_checklist_opts, __VA_ARGS__))
+#define cui_veil(ui, id, revealed, ...)    CUI__SCOPE(cui_veil_begin_ex((ui), (id), (revealed), CUI__OPTS(cui_veil_opts, __VA_ARGS__)), cui_veil_end(ui))
 #define cui_multi_select(ui, id, items, count, selected, ...) cui_multi_select_ex((ui), (id), (items), (count), (selected), CUI__OPTS(cui_multi_select_opts, __VA_ARGS__))
 #define cui_date_range_picker(ui, id, range, ...) cui_date_range_picker_ex((ui), (id), (range), CUI__OPTS(cui_date_range_opts, __VA_ARGS__))
 #define cui_time_picker(ui, id, hour, minute, ...) cui_time_picker_ex((ui), (id), (hour), (minute), CUI__OPTS(cui_time_opts, __VA_ARGS__))

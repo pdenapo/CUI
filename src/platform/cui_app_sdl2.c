@@ -41,6 +41,22 @@ static bool cui__sdl_env_set(const char *name, const char *value) {
 }
 #endif
 
+/* IME candidate window: CUI calls this every frame a text field has focus, with
+ * the caret rectangle in window points, top-left origin, so the candidate list
+ * opens at the caret instead of at a stale position. */
+static void cui__sdl_text_input_rect(void *user, cui_rect caret) {
+    (void)user;
+    SDL_Rect r;
+    r.x = (int)(caret.x + 0.5f);
+    r.y = (int)(caret.y + 0.5f);
+    r.w = (int)(caret.w + 0.5f);
+    r.h = (int)(caret.h + 0.5f);
+    if (r.w < 1) r.w = 1;
+    if (r.h < 1) r.h = 1;
+    SDL_SetTextInputRect(&r);
+    if (!SDL_IsTextInputActive()) SDL_StartTextInput();
+}
+
 bool cui__plat_init(cui_app *app) {
     /* The app ID becomes WM_CLASS (X11) and the app_id (Wayland). SDL2 reads it
      * from these variables in SDL_Init, Wayland falling back to the X11 one;
@@ -52,6 +68,10 @@ bool cui__plat_init(cui_app *app) {
 #if !defined(_WIN32)
     bool set_x11 = cui__sdl_env_set("SDL_VIDEO_X11_WMCLASS", app->desc.app_id);
     bool set_wayland = cui__sdl_env_set("SDL_VIDEO_WAYLAND_WMCLASS", app->desc.app_id);
+#endif
+#ifdef SDL_HINT_IME_SHOW_UI   /* SDL 2.0.20 */
+    /* the OS draws the candidate list; SDL hides it unless this hint is set */
+    SDL_SetHint(SDL_HINT_IME_SHOW_UI, "1");
 #endif
     int init = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
 #if !defined(_WIN32)
@@ -83,6 +103,10 @@ bool cui__plat_init(cui_app *app) {
     SDL_SystemCursor ids[CUI_CURSOR_COUNT] = { SDL_SYSTEM_CURSOR_ARROW, SDL_SYSTEM_CURSOR_HAND, SDL_SYSTEM_CURSOR_IBEAM,
                                               SDL_SYSTEM_CURSOR_SIZEWE, SDL_SYSTEM_CURSOR_SIZENS, SDL_SYSTEM_CURSOR_SIZEALL, SDL_SYSTEM_CURSOR_NO };
     for (int i = 0; i < CUI_CURSOR_COUNT; i++) s->cursors[i] = SDL_CreateSystemCursor(ids[i]);
+    /* Text input stays on while the window is open, not only while a text field has
+     * focus: type-ahead in lists, trees and the file browser, the one-time code input,
+     * the hex editor and the shortcut recorder read typed characters without being a
+     * text field, and SDL delivers no SDL_TEXTINPUT while text input is off. */
     SDL_StartTextInput();
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
     cui_platform_iface pi;
@@ -91,6 +115,7 @@ bool cui__plat_init(cui_app *app) {
     pi.set_cursor = cui__sdl_set_cursor;
     pi.set_clipboard = cui__sdl_set_clip;
     pi.get_clipboard = cui__sdl_get_clip;
+    pi.set_text_input_rect = cui__sdl_text_input_rect;
     cui_set_platform(app->ui, &pi);
     return true;
 }

@@ -458,6 +458,8 @@ static void page_feedback(cui_ctx *ui, gallery *g) {
             cui_heading(ui, "Progress", 4);
             cui_progress(ui, 0.68f, .label = "Uploading assets", .show_value = true);
             cui_progress(ui, 0.0f, .label = "Indexing", .indeterminate = true);
+            cui_progress(ui, 0.42f, .label = "Exporting clip.mp4", .show_value = true, .dither = true);
+            cui_progress(ui, 0.0f, .label = "Syncing library", .indeterminate = true, .dither = true);
             cui_meter(ui, "Storage", 18.4f, 20, "GB");
             cui_row(ui, .gap = 16, .wrap = true) {
                 cui_spinner(ui, 16);
@@ -477,6 +479,47 @@ static void page_feedback(cui_ctx *ui, gallery *g) {
             cui_skeleton(ui, CUI_FILL, 88);
             cui_skeleton(ui, CUI_PCT(90), 12);
             cui_skeleton(ui, CUI_PCT(60), 12);
+            cui_skeleton_group(ui, .dither = true, .gap = 10) {
+                cui_row(ui, .gap = 12, .align = CUI_ALIGN_CENTER, .width = CUI_FILL) {
+                    cui_skeleton(ui, CUI_PX(32), 32);
+                    cui_column(ui, .gap = 8, .width = CUI_FILL) { cui_skeleton(ui, CUI_PCT(60), 8); cui_skeleton(ui, CUI_PCT(40), 8); }
+                }
+                cui_skeleton(ui, CUI_FILL, 8);
+            }
+        }
+        cui_card(ui, .gap = 14) {
+            cui_heading(ui, "Dither spinners", 4);
+            cui_row(ui, .gap = 20, .wrap = true, .align = CUI_ALIGN_CENTER) {
+                static const cui_spinner_style styles[] = { CUI_SPINNER_COMET, CUI_SPINNER_DOT_MATRIX, CUI_SPINNER_FILL_DRAIN, CUI_SPINNER_RADAR,
+                                                            CUI_SPINNER_RIPPLE, CUI_SPINNER_TRANSFER, CUI_SPINNER_ORBIT, CUI_SPINNER_BOUNCE,
+                                                            CUI_SPINNER_SCAN, CUI_SPINNER_PULSE, CUI_SPINNER_SPIRAL, CUI_SPINNER_PLASMA };
+                for (int k = 0; k < (int)(sizeof styles / sizeof styles[0]); k++) cui_spinner(ui, 40, .style = styles[k]);
+            }
+            cui_row(ui, .gap = 10, .wrap = true, .align = CUI_ALIGN_CENTER) {
+                cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER, .pad_x = 14, .pad_y = 8, .radius = 10, .bg = CUI_COLOR_FOREGROUND) {
+                    cui_spinner(ui, 14, .style = CUI_SPINNER_COMET, .color = CUI_COLOR_BACKGROUND);
+                    cui_text(ui, "Saving\xe2\x80\xa6", .font = CUI_FONT_MEDIUM, .color = CUI_COLOR_BACKGROUND);
+                }
+                cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER, .pad_x = 11, .pad_y = 6, .radius = 999, .border = 1, .bg = CUI_COLOR_SURFACE) {
+                    cui_spinner(ui, 14, .style = CUI_SPINNER_ORBIT);
+                    cui_text(ui, "Syncing 24 files", .color = CUI_COLOR_TEXT_SECONDARY);
+                }
+                cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER, .pad_x = 11, .pad_y = 6, .radius = 999, .border = 1, .bg = CUI_COLOR_SURFACE) {
+                    cui_spinner(ui, 14, .style = CUI_SPINNER_RIPPLE);
+                    cui_text(ui, "Connecting", .color = CUI_COLOR_TEXT_SECONDARY);
+                }
+            }
+            /* a job that takes two seconds and then succeeds or fails, in turn */
+            static double started = -1;
+            static int runs;
+            double since = cui_time(ui) - started;
+            cui_status st = started < 0 ? CUI_STATUS_IDLE : since < 2 ? CUI_STATUS_BUSY : runs % 2 ? CUI_STATUS_SUCCESS : CUI_STATUS_ERROR;
+            cui_row(ui, .gap = 10, .align = CUI_ALIGN_CENTER) {
+                if (cui_button(ui, "Upload", .size = CUI_SIZE_SM, .disabled = st == CUI_STATUS_BUSY)) { started = cui_time(ui); runs++; }
+                cui_status_spinner(ui, "upload", st, .size = 18);
+                cui_text(ui, st == CUI_STATUS_BUSY ? "Uploading" : st == CUI_STATUS_SUCCESS ? "Uploaded" : st == CUI_STATUS_ERROR ? "Upload failed" : "",
+                         .color = CUI_COLOR_TEXT_SECONDARY);
+            }
         }
     }
     cui_box(ui, .dir = CUI_GRID, .columns = 2, .min_column_width = 260, .gap = 16) {
@@ -682,6 +725,21 @@ static void page_charts(cui_ctx *ui, gallery *g) {
                 cui_donut_chart(ui, "platforms", shares, labels, 4, .height = 180, .format = "%.0f%%");
             }
         }
+    }
+    section(ui, "Dither area chart", "Fills made of dots that thin out toward the base; stacked bands keep their own color.");
+    cui_card(ui) {
+        static const char *hours[12] = { "00:00", "02:00", "04:00", "06:00", "08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00", "22:00" };
+        static const float api[12] = { 22, 19, 17, 21, 30, 38, 41, 37, 34, 39, 33, 26 };
+        static const float web[12] = { 18, 15, 13, 16, 24, 33, 36, 40, 38, 42, 35, 28 };
+        cui_series s[2] = { { "API", api, 12, CUI_COLOR_SERIES(3) }, { "Web", web, 12, CUI_COLOR_SERIES(0) } };
+        cui_line_chart(ui, "requests", s, 2, .labels = hours, .label_count = 12, .dither = true, .stacked = true, .smooth = true, .height = 220, .format = "%.0fk");
+    }
+    section(ui, "Pattern meter", "Each part has a color and a density, so it reads in grayscale too. Hover a part or a legend entry.");
+    cui_card(ui, .gap = 24) {
+        static const cui_meter_part parts[] = { { "Photos", 81 }, { "Video", 58 }, { "Apps", 41 }, { "Docs", 32 } };
+        static bool gray;
+        cui_pattern_meter(ui, "storage", parts, 4, .total = 256, .label = "Storage", .unit = "GB", .grayscale = gray);
+        cui_checkbox(ui, "Grayscale", &gray);
     }
     section(ui, "Stacked bars and gauges", NULL);
     cui_box(ui, .dir = CUI_GRID, .columns = 2, .min_column_width = 260, .gap = 16) {

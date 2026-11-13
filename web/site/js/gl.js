@@ -29,6 +29,12 @@ float erf_(float x) {
   float y = 1.0 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * exp(-x * x);
   return s * y;
 }
+float bayer8(vec2 p) {
+  ivec2 q = ivec2(mod(floor(p), 8.0));
+  int a = q.x ^ q.y, y = q.y;
+  int m = ((a & 1) << 5) | ((y & 1) << 4) | ((a & 2) << 2) | ((y & 2) << 1) | ((a & 4) >> 1) | ((y & 4) >> 2);
+  return (float(m) + 0.5) / 64.0;
+}
 void main() {
   int mode = int(v_params.y + 0.5);
   vec4 c = v_color;
@@ -45,6 +51,10 @@ void main() {
     float s = max(v_params.x, 0.01);
     float a = c.a * 0.5 * (1.0 - erf_(d / (s * 1.41421356)));
     frag = vec4(c.rgb * a, a);
+  } else if (mode == 5) {
+    float t = bayer8(v_uv);
+    float k = t >= v_params.x && t < c.a ? v_bcolor.a * clamp(0.5 - d, 0.0, 1.0) : 0.0;
+    frag = vec4(v_bcolor.rgb * k, k);
   } else {
     float cov = clamp(0.5 - d, 0.0, 1.0);
     vec4 t = texture(u_tex, v_uv);

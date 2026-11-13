@@ -335,6 +335,17 @@ button.chip:hover { background: var(--active); color: var(--fg); }
 .canvas-wrap { position: relative; line-height: 0; flex: none; max-width: 100%; }
 .canvas-wrap canvas { display: block; outline: none; border-radius: 2px; touch-action: none; }
 .canvas-wrap canvas:focus, .canvas-wrap canvas:focus-visible { outline: none; box-shadow: none; }
+/* The IME anchor (preview.js): kept at the caret of the field being edited so
+   the browser opens the candidate window there. Shown only while composing. */
+.canvas-wrap .ime-proxy {
+  position: absolute; left: 0; top: 0; width: 1px; height: 1em; margin: 0; padding: 0 1px; border: 0;
+  outline: none; resize: none; overflow: hidden; white-space: pre; font-family: var(--font);
+  opacity: 0; color: transparent; background: transparent; caret-color: transparent; pointer-events: none;
+}
+.canvas-wrap .ime-proxy.composing {
+  opacity: 1; color: var(--fg); background: var(--surface); box-shadow: 0 0 0 1px var(--border-strong);
+  border-radius: 2px; text-decoration: underline;
+}
 .resize {
   position: absolute; right: -14px; bottom: -14px; width: 22px; height: 22px;
   cursor: nwse-resize; display: grid; place-items: center; color: var(--text-3);

@@ -43,6 +43,7 @@ set(CUI_CORE_SOURCES
     src/cui_actions.c
     src/cui_pickers.c
     src/cui_disclosure.c
+    src/cui_loading.c
     src/cui_grid.c
     src/cui_treetable.c
     src/cui_code.c

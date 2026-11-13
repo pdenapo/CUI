@@ -1,6 +1,6 @@
 /* Win32 backend (Windows 7 and later). Per-monitor DPI awareness, WGL
- * OpenGL 3.3 with a GDI software fallback, UTF-16 text input, clipboard,
- * dark title bars and smooth live resizing. */
+ * OpenGL 3.3 with a GDI software fallback, UTF-16 text input with the IME
+ * placed at the caret, clipboard, dark title bars and smooth live resizing. */
 #include "cui_platform.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -12,6 +12,7 @@
 #include <windows.h>
 #include <windowsx.h>
 #include <shellapi.h>
+#include <imm.h>
 
 #ifndef WM_DPICHANGED
 #define WM_DPICHANGED 0x02E0
@@ -42,6 +43,9 @@ typedef struct {
     float scale;
     bool tracking;
     WCHAR high_surrogate;
+    RECT ime_caret;        /* the focused text field's caret in client pixels, where the IME opens */
+    bool ime_caret_set;
+    int sys_caret_h;       /* height of our hidden system caret, 0 while there is none */
     HCURSOR cursors[CUI_CURSOR_COUNT];
     cui_cursor cursor;
     bool in_size_move;
@@ -212,6 +216,62 @@ static const char *cui__win32_get_clip(void *user) {
     return result;
 }
 
+/* Tells the input method where the caret is: the composition window starts at
+ * the caret and the candidate list opens under the line without covering it.
+ * IMEs differ in what they read, so each form is set. Chinese IMEs running
+ * through TSF take the candidate position, Japanese and Korean IMEs the
+ * excluded rectangle, and older IMEs, magnifiers and screen readers follow the
+ * system caret, which stays hidden: CUI draws its own. */
+static void cui__win32_place_ime(cui__win32 *w) {
+    if (!w->ime_caret_set) return;
+    RECT c = w->ime_caret;
+    if (GetFocus() == w->hwnd) {
+        int h = (int)(c.bottom - c.top);
+        if (w->sys_caret_h != h) {
+            if (w->sys_caret_h) DestroyCaret();
+            w->sys_caret_h = CreateCaret(w->hwnd, NULL, 1, h) ? h : 0;
+        }
+        if (w->sys_caret_h) SetCaretPos(c.left, c.top);
+    }
+    HIMC imc = ImmGetContext(w->hwnd);
+    if (!imc) return;   /* no IME for this window or this keyboard layout */
+    COMPOSITIONFORM comp;
+    memset(&comp, 0, sizeof comp);
+    comp.dwStyle = CFS_POINT;
+    comp.ptCurrentPos.x = c.left;
+    comp.ptCurrentPos.y = c.top;
+    ImmSetCompositionWindow(imc, &comp);
+    CANDIDATEFORM cand;
+    memset(&cand, 0, sizeof cand);
+    cand.dwIndex = 0;
+    cand.dwStyle = CFS_CANDIDATEPOS;
+    cand.ptCurrentPos.x = c.left;
+    cand.ptCurrentPos.y = c.bottom;
+    ImmSetCandidateWindow(imc, &cand);
+    cand.dwStyle = CFS_EXCLUDE;
+    cand.ptCurrentPos.y = c.top;
+    cand.rcArea = c;
+    ImmSetCandidateWindow(imc, &cand);
+    ImmReleaseContext(w->hwnd, imc);
+}
+
+/* CUI calls this every frame a text field has focus, with the caret in window
+ * points; the IME is told only when the caret moved. */
+static void cui__win32_text_input_rect(void *user, cui_rect caret) {
+    cui_app *app = user;
+    cui__win32 *w = cui__w(app);
+    float s = w->scale;
+    RECT r;
+    r.left = (LONG)floorf(caret.x * s);
+    r.top = (LONG)floorf(caret.y * s);
+    r.right = r.left + CUI_MAX(1, (LONG)ceilf(caret.w * s));
+    r.bottom = r.top + CUI_MAX(1, (LONG)ceilf(caret.h * s));
+    if (w->ime_caret_set && EqualRect(&r, &w->ime_caret)) return;
+    w->ime_caret = r;
+    w->ime_caret_set = true;
+    cui__win32_place_ime(w);
+}
+
 static LRESULT CALLBACK cui__win32_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     cui_app *app = (cui_app *)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
     if (!app) {
@@ -296,7 +356,7 @@ static LRESULT CALLBACK cui__win32_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         if (n > 64) n = 64;
         POINT pt = { 0, 0 };
         DragQueryPoint(drop, &pt);
-        char *paths[64];
+        char *paths[64] = { 0 };   /* zeroed: MinGW cannot tell that only the first `got` are read */
         int got = 0;
         for (UINT i = 0; i < n; i++) {
             UINT len = DragQueryFileW(drop, i, NULL, 0);
@@ -343,8 +403,20 @@ static LRESULT CALLBACK cui__win32_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         cui_input_text(ui, buf);
         return 0;
     }
-    case WM_SETFOCUS: cui_input_focus(ui, true); return 0;
-    case WM_KILLFOCUS: cui_input_focus(ui, false); return 0;
+    /* Text committed in an IME arrives as WM_CHAR, one UTF-16 unit at a time:
+     * DefWindowProcW turns the result string of WM_IME_COMPOSITION into
+     * WM_IME_CHAR and those into WM_CHAR, so neither is read here. */
+    case WM_IME_STARTCOMPOSITION:
+        if (w) cui__win32_place_ime(w);
+        break;
+    case WM_SETFOCUS:
+        if (w) cui__win32_place_ime(w);
+        cui_input_focus(ui, true);
+        return 0;
+    case WM_KILLFOCUS:
+        if (w && w->sys_caret_h) { DestroyCaret(); w->sys_caret_h = 0; }
+        cui_input_focus(ui, false);
+        return 0;
     case WM_SETCURSOR:
         if (w && LOWORD(lp) == HTCLIENT) { SetCursor(w->cursors[w->cursor]); return TRUE; }
         break;
@@ -411,6 +483,7 @@ bool cui__plat_init(cui_app *app) {
     pi.set_clipboard = cui__win32_set_clip;
     pi.get_clipboard = cui__win32_get_clip;
     pi.set_cursor = cui__win32_set_cursor;
+    pi.set_text_input_rect = cui__win32_text_input_rect;
     cui_set_platform(app->ui, &pi);
     return true;
 }

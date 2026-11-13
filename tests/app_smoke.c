@@ -206,6 +206,13 @@ int main(int argc, char **argv) {
 #ifdef CUI_SMOKE_X11
     app_id_ok = smoke_app_id_ok(app);
 #endif
+    bool text_input_ok = true;
+#if defined(CUI_SMOKE_X11) && defined(CUI_SMOKE_SDL2)
+    /* typed characters reach type-ahead, the one-time code input and the hex editor
+     * without a text field focused, so SDL text input must stay on between fields */
+    text_input_ok = SDL_IsTextInputActive();
+    printf("SDL text input outside text fields: %s\n", text_input_ok ? "on" : "OFF");
+#endif
 #ifdef CUI_SMOKE_X11
     /* An X server resets when its last client disconnects, and a window opened during the reset
      * fails. Xvfb does this by default, so hold a connection while the next test's app starts. */
@@ -224,5 +231,5 @@ int main(int argc, char **argv) {
 #ifdef __APPLE__
     quit_ok = smoke_quit_menu();
 #endif
-    return (ok && switched && paced && null_ok && app_id_ok && theme_ok && quit_ok) ? 0 : 1;
+    return (ok && switched && paced && null_ok && app_id_ok && text_input_ok && theme_ok && quit_ok) ? 0 : 1;
 }

@@ -31,6 +31,8 @@ typedef struct web_inst {
     float build_ms, paint_ms;
     int scroll_consumed;
     int vertex_count, index_count;
+    float caret[4];        /* the focused text field's caret (x, y, w, h in points), for the page's IME anchor */
+    bool caret_live;       /* a text field reported it in the latest frame */
 } web_inst;
 
 /* ---- clipboard: the page keeps this copy current on paste ---- */
@@ -50,7 +52,11 @@ static void clip_set(void *user, const char *utf8) {
 }
 static const char *clip_get(void *user) { (void)user; return clip_buf ? clip_buf : ""; }
 static void set_cursor(void *user, cui_cursor c) { (void)user; (void)c; }
-static void set_text_rect(void *user, cui_rect r) { (void)user; (void)r; }
+static void set_text_rect(void *user, cui_rect r) {
+    web_inst *in = user;
+    in->caret[0] = r.x; in->caret[1] = r.y; in->caret[2] = r.w; in->caret[3] = r.h;
+    in->caret_live = true;
+}
 
 /* ---- memory for strings passed in from JS ---- */
 EXPORT(web_alloc) void *web_alloc(int n) { return malloc((size_t)n); }
@@ -71,6 +77,7 @@ static void warm_up(web_inst *in) {
     for (int f = 0; f < n; f++) {
         web_content_input(in->content, in->ui, -(f + 1));
         cui_begin_frame(in->ui, 1.0f / 60.0f);
+        in->caret_live = false;
         web_content_build(in->content, in->ui, f);
         cui_end_frame(in->ui);
     }
@@ -94,7 +101,7 @@ EXPORT(inst_new) web_inst *inst_new(int content, float w, float h, float scale, 
     in->content = content;
     in->ui = cui_create(&(cui_ctx_desc){ .renderer = iface, .theme = dark ? CUI_THEME_DARK : CUI_THEME_LIGHT,
                                         .accent = accent >= 0 ? (cui_accent)accent : CUI_ACCENT_NEUTRAL });
-    cui_set_platform(in->ui, &(cui_platform_iface){ .set_clipboard = clip_set, .get_clipboard = clip_get,
+    cui_set_platform(in->ui, &(cui_platform_iface){ .user = in, .set_clipboard = clip_set, .get_clipboard = clip_get,
                                                    .set_cursor = set_cursor, .set_text_input_rect = set_text_rect, .draw_emoji = draw_emoji });
     cui_set_viewport(in->ui, w, h, scale);
     cui_input_focus(in->ui, true);
@@ -147,6 +154,7 @@ EXPORT(inst_frame) int inst_frame(web_inst *in, float dt, int paint) {
     bool had_scroll = ui->scroll_dx != 0 || ui->scroll_dy != 0;
     double t0 = js_perf_now();
     cui_begin_frame(ui, dt);
+    in->caret_live = false;
     web_content_build(in->content, ui, in->frame++);
     in->scroll_consumed = had_scroll && ui->scroll_dx == 0 && ui->scroll_dy == 0;
     cui_end_frame(ui);
@@ -181,6 +189,10 @@ EXPORT(inst_needs_redraw) int inst_needs_redraw(web_inst *in) { return cui_needs
 EXPORT(inst_next_wakeup) float inst_next_wakeup(web_inst *in) { return cui_next_wakeup(in->ui); }
 EXPORT(inst_cursor) int inst_cursor(web_inst *in) { return (int)cui_get_cursor(in->ui); }
 EXPORT(inst_wants_keyboard) int inst_wants_keyboard(web_inst *in) { return cui_wants_keyboard(in->ui); }
+/* The caret of the text field being edited, as four floats (x, y, w, h in
+ * points), or 0 when none has focus. The page keeps a hidden text area there,
+ * because browsers open the IME candidate window only at a focused DOM input. */
+EXPORT(inst_text_rect) const float *inst_text_rect(web_inst *in) { return in->caret_live ? in->caret : NULL; }
 
 EXPORT(inst_mouse_move) void inst_mouse_move(web_inst *in, float x, float y) { cui_input_mouse_move(in->ui, x, y); }
 EXPORT(inst_mouse_button) void inst_mouse_button(web_inst *in, int b, int down) { cui_input_mouse_button(in->ui, (cui_mouse_button)b, down != 0); }

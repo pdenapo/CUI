@@ -131,15 +131,19 @@ bool cui_radio_cards_ex(cui_ctx *ui, const char *id_str, const cui_choice *choic
 
 typedef struct { char typing[96]; float hover; } cui__tag_state;
 
+/** Count all committed tags even when only the first slots have room to draw. */
 static int cui__tag_split(const char *buf, int *starts, int *lens, int max) {
     int n = 0, i = 0, len = (int)strlen(buf);
-    while (i < len && n < max) {
+    while (i < len) {
         while (i < len && (buf[i] == ',' || buf[i] == ' ')) i++;
         int s = i;
         while (i < len && buf[i] != ',') i++;
         int e = i;
         while (e > s && buf[e - 1] == ' ') e--;
-        if (e > s) { starts[n] = s; lens[n] = e - s; n++; }
+        if (e > s) {
+            if (n < max) { starts[n] = s; lens[n] = e - s; }
+            n++;
+        }
     }
     return n;
 }
@@ -156,18 +160,21 @@ static void cui__tag_rebuild(char *buf, size_t cap, const char *src, const int *
     snprintf(buf, cap, "%s", tmp);
 }
 
-static void cui__tag_add(char *buf, size_t cap, const char *tag) {
+/** Report a committed tag only if it contained text and fit in the buffer. */
+static bool cui__tag_add(char *buf, size_t cap, const char *tag) {
     while (*tag == ' ') tag++;
     size_t tl = strlen(tag);
     while (tl > 0 && tag[tl - 1] == ' ') tl--;
-    if (tl == 0) return;
+    if (tl == 0) return false;
     size_t len = strlen(buf);
-    if (len + tl + 3 >= cap) return;
+    if (len + tl + 3 >= cap) return false;
     if (len) { buf[len++] = ','; buf[len++] = ' '; }
     memcpy(buf + len, tag, tl);
     buf[len + tl] = 0;
+    return true;
 }
 
+/** Check the limit after each successful tag, including within one input event. */
 bool cui_tag_input_ex(cui_ctx *ui, const char *id_str, char *buf, size_t cap, const cui_tag_opts *o) {
     cui_tag_opts d;
     memset(&d, 0, sizeof d);
@@ -177,11 +184,12 @@ bool cui_tag_input_ex(cui_ctx *ui, const char *id_str, char *buf, size_t cap, co
     cui__tag_state *st = cui_state(ui, id, sizeof *st);
     bool changed = false;
     int starts[64], lens[64];
-    int n = cui__tag_split(buf, starts, lens, 64);
-    bool full = o->max_tags > 0 && n >= o->max_tags;
+    int count = cui__tag_split(buf, starts, lens, 64);
+    int n = CUI_MIN(count, 64);
     if (ui->focus == fid && cui_key_pressed(ui, CUI_KEY_BACKSPACE) && st->typing[0] == 0 && n > 0) {
         cui__tag_rebuild(buf, cap, buf, starts, lens, n, n - 1);
-        n = cui__tag_split(buf, starts, lens, 64);
+        count = cui__tag_split(buf, starts, lens, 64);
+        n = CUI_MIN(count, 64);
         changed = true;
     }
     cui_interact r = cui__interact(ui, id, 0);
@@ -240,29 +248,32 @@ bool cui_tag_input_ex(cui_ctx *ui, const char *id_str, char *buf, size_t cap, co
     cui_input_opts io;
     memset(&io, 0, sizeof io);
     io.placeholder = n == 0 ? (o->placeholder ? o->placeholder : "Add a tag") : NULL;
-    io.read_only = full;
+    io.read_only = o->max_tags > 0 && count >= o->max_tags;
     int f = cui__text_field(ui, fid, st->typing, sizeof st->typing, &io, false, 1, NULL);
     ui->nodes[ui->last_node].min_w = 60;
     cui__close(ui);
     if (outer >= 0) cui__close(ui);
     if (remove >= 0) {
         cui__tag_rebuild(buf, cap, buf, starts, lens, n, remove);
+        count = cui__tag_split(buf, starts, lens, 64);
         changed = true;
     }
     if ((f & CUI_CHANGED) && strchr(st->typing, ',')) {
         char *p = st->typing, *c;
         while ((c = strchr(p, ',')) != NULL) {
             *c = 0;
-            if (!full) cui__tag_add(buf, cap, p);
+            if ((o->max_tags <= 0 || count < o->max_tags) && cui__tag_add(buf, cap, p)) {
+                count++;
+                changed = true;
+            }
             p = c + 1;
         }
-        memmove(st->typing, p, strlen(p) + 1);
-        changed = true;
+        if (o->max_tags > 0 && count >= o->max_tags) st->typing[0] = 0;
+        else memmove(st->typing, p, strlen(p) + 1);
     }
-    if ((f & CUI_SUBMITTED) && st->typing[0] && !full) {
-        cui__tag_add(buf, cap, st->typing);
+    if ((f & CUI_SUBMITTED) && st->typing[0] && (o->max_tags <= 0 || count < o->max_tags)) {
+        changed |= cui__tag_add(buf, cap, st->typing);
         st->typing[0] = 0;
-        changed = true;
     }
     ui->last_id = id;
     return changed;
@@ -276,7 +287,7 @@ typedef struct { float focus; bool was_complete; } cui__otp_state;
 
 static bool cui__otp_input_body(cui_ctx *ui, const char *id_str, char *code, int length);
 
-/* left to right in any interface: see cui__keep_ltr */
+/** Keep codes left to right in every interface and report completed edits. */
 bool cui_otp_input(cui_ctx *ui, const char *id_str, char *code, int length) {
     int first = ui->node_count;
     bool r = cui__otp_input_body(ui, id_str, code, length);
@@ -284,6 +295,7 @@ bool cui_otp_input(cui_ctx *ui, const char *id_str, char *code, int length) {
     return r;
 }
 
+/** A changed paste can complete a new code while the boxes stay filled. */
 static bool cui__otp_input_body(cui_ctx *ui, const char *id_str, char *code, int length) {
     if (length <= 0) return false;
     if (length > 12) length = 12;
@@ -292,6 +304,9 @@ static bool cui__otp_input_body(cui_ctx *ui, const char *id_str, char *code, int
     cui_interact r = cui__interact(ui, id, CUI_IF_FOCUSABLE | CUI_IF_TEXT);
     bool focused = ui->focus == id;
     int len = (int)strnlen(code, (size_t)length);
+    const int previous_length = len;
+    char previous_code[12];
+    memcpy(previous_code, code, (size_t)previous_length);
     code[len] = 0;
     if (focused) {
         ui->edit = (struct cui_edit_state *)(void *)st;   /* tells the app a text field has focus */
@@ -350,7 +365,8 @@ static bool cui__otp_input_body(cui_ctx *ui, const char *id_str, char *code, int
     cui__close(ui);
     cui__focus_after(ui, row, r.focus_visible);
     bool complete = len == length;
-    bool fire = complete && !st->was_complete;
+    bool fire = complete && (!st->was_complete || previous_length != length ||
+                             memcmp(previous_code, code, (size_t)length) != 0);
     st->was_complete = complete;
     ui->last_id = id;
     return fire;

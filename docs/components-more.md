@@ -536,6 +536,33 @@ The rail fills as you read, and a marker glides to the section in view. Clicking
 
 Keyboard: Tab moves through the entries, and Enter or Space jumps to the focused section.
 
+### Veil
+
+Covers sensitive content, a secret or a spoiler with slowly moving dots in muted tones that keep its space, and dissolves when it is revealed.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="images/components/veil-dark.png"><img src="images/components/veil.png" alt="Veil"></picture>
+
+```c
+static bool photo, key, spoiler;
+cui_veil(ui, "photo", &photo, .label = "Sensitive image", .hint = "Click to show", .toggle = true, .radius = 10) {
+    cui_image(ui, tex, .width = CUI_PX(234), .height = CUI_PX(150), .radius = 10);
+}
+cui_veil(ui, "key", &key, .color = CUI_COLOR_SURFACE) { cui_text(ui, api_key, .font = CUI_FONT_MONO); }
+if (cui_button(ui, key ? "Hide" : "Reveal")) key = !key;
+cui_row(ui, .gap = 4) {
+    cui_text(ui, "The ending:");
+    cui_veil(ui, "spoiler", &spoiler, .toggle = true) { cui_text(ui, "the keeper was the narrator"); }
+}
+```
+
+The veil wraps whatever is built inside it and takes exactly its size. Covered, it is an ordered dither of the `color` (the muted surface by default) and a step toward the text color, its density moving slowly like a noise, with an optional `label` and smaller `hint` in the middle. A click reveals the content: the veil's dots turn off in threshold order, a dissolve of about 0.28 seconds, and come back the same way when hidden. While it is covered, or still coming back, the content takes no clicks, and fully covered it takes no keyboard focus either; once revealed, both reach the content again.
+
+`revealed` is your `bool`: a click on the veil sets it, and setting it yourself shows or covers the content, as the Hide button does above. With `toggle` a click on the revealed content (where it is not a control of its own) covers it again. `radius` rounds the veil's corners and `width` sizes it instead of the content. `cui_veil_begin_ex` returns true on the frame a click or a key changed `revealed`, for code that needs to know; `cui_veil_end` closes it. Veils may nest.
+
+The noise moves in steps, a dozen a second, so a covered veil does not redraw every frame. Reduced motion holds the noise still and reveals and covers at once.
+
+Keyboard: Tab focuses the veil, and Enter or Space reveals it or covers it again.
+
 ## Feedback
 
 ### Banner and countdown
@@ -600,6 +627,43 @@ if (cui_toast_action_clicked(ui, undo_toast)) unarchive();
 The undo toast is `cui_toast` with two options. Call `cui_toast` once, on the frame the action happens, not on every frame: each call queues a new toast. It returns a handle, and handles start at 1. Keep the handle in a variable that outlives the frame and ask `cui_toast_action_clicked(ui, handle)` on the frames that follow. It returns true once, when the action button is pressed, which also dismisses the toast. The toast copies its strings, so they may be temporary. `duration` is in seconds, and a negative value keeps the toast until it is dismissed.
 
 Keyboard: the Undo button takes Tab, and Enter or Space presses it.
+
+### Status spinner
+
+A dither spinner for work that ends: a ring while it runs, then a disc with a check or a cross that holds for a moment and dissolves away.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="images/components/status-spinner-dark.png"><img src="images/components/status-spinner.png" alt="Status spinner"></picture>
+
+```c
+cui_status st = uploading ? CUI_STATUS_BUSY : upload_ok ? CUI_STATUS_SUCCESS : CUI_STATUS_ERROR;
+cui_row(ui, .gap = 8, .align = CUI_ALIGN_CENTER) {
+    cui_status_spinner(ui, "upload", st, .size = 16);
+    cui_text(ui, uploading ? "Uploading" : upload_ok ? "Uploaded" : "Upload failed");
+}
+```
+
+It takes the same `cui_status` as the status button. While the status is `CUI_STATUS_BUSY` it is the comet ring of the [dither spinners](components.md#dither-spinners). When the status turns to `CUI_STATUS_SUCCESS` a disc in the success color dissolves in over 0.35 seconds with a check cut out of it in the background color; `CUI_STATUS_ERROR` does the same in the danger color with a cross. The result holds until 1.8 seconds after the change, then dissolves away over 0.6 seconds. `keep` holds it for as long as you call it. `CUI_STATUS_IDLE` shows nothing. It keeps its space throughout, so the text beside it does not move.
+
+Returns true while it shows something, so after a result you can stop calling it once it returns false. The id keeps the time of the last change; a status that changes again starts over. Options: `size` in points (20) and `color` for the ring. It asks for 30 frames a second while the ring turns and while the disc dissolves in or away, one frame at the end of the hold, and none after that. Under reduced motion the ring holds still, and the result shows at once and goes at once when the hold and the dissolve would have ended.
+
+### Skeleton group
+
+Placeholders for content that is loading, sharing one shine that passes over them together; with `dither` they are drawn in dots under a passing band of brighter dots.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="images/components/dither-skeleton-dark.png"><img src="images/components/dither-skeleton.png" alt="Skeleton group"></picture>
+
+```c
+cui_skeleton_group(ui, .dither = true, .gap = 12) {
+    cui_row(ui, .gap = 12, .align = CUI_ALIGN_CENTER, .width = CUI_FILL) {
+        cui_skeleton(ui, CUI_PX(32), 32);                  /* an avatar */
+        cui_column(ui, .gap = 8, .width = CUI_FILL) { cui_skeleton(ui, CUI_PCT(60), 8); cui_skeleton(ui, CUI_PCT(40), 8); }
+    }
+    cui_skeleton(ui, CUI_FILL, 8);
+    cui_skeleton(ui, CUI_PCT(80), 8);
+}
+```
+
+Build the placeholders inside the group with `cui_skeleton`, in the rows and columns the content will have. Every placeholder in a group takes its shine from the group's rectangle, so one sweep crosses them all instead of each running its own. With `dither` a placeholder is a solid base of dots in the skeleton's color, and a soft diagonal band of brighter dots, on one grid for the whole group, travels across from 30 dots before the group to 30 after it at 42 dots a second. The band moves in steps, 20 a second, and the group asks for frames only while it is on screen; reduced motion holds the band a third of the way across. Without `dither` the placeholders look as they do on their own and the reduced motion path draws no shine. The group is a column: `width` (the container's width when unset) and `gap` (8). Groups nest. It returns nothing and takes no input.
 
 ## Data
 
@@ -724,7 +788,7 @@ cui_code_block(ui, "counter", source, .lang = "c", .title = "counter.c", .line_n
 
 Highlighting for C, C++, JavaScript, TypeScript, Python, Rust, Go, JSON and shell, in colors that follow the theme. Long lines scroll sideways, `max_height` makes the block scroll vertically, and the copy button morphs into a check after copying.
 
-Returns nothing. `source` is your string, read on every frame, so it can change while it is shown. `lang` takes "c", "cpp", "js", "ts", "python", "rust", "go", "json" or "shell", and "text" for no colors. The title bar shows `title`, or the language when there is no title, and holds the copy button: a block with neither, or with `no_header`, has no copy button. `highlight_from` and `highlight_to` are line numbers from 1, and `highlight_from` alone marks one line. To let people change the code, use the code editor.
+Returns nothing. `source` is your string, read on every frame, so it can change while it is shown. `lang` takes "c", "cpp", "js", "ts", "python", "rust", "go", "json", "shell" or "sql", and "text" for no colors. SQL keywords, types and `NULL`, `TRUE` and `FALSE` match in any case, `--` starts a comment and `/* */` comments run across lines. The title bar shows `title`, or the language when there is no title, and holds the copy button: a block with neither, or with `no_header`, has no copy button. `highlight_from` and `highlight_to` are line numbers from 1, and `highlight_from` alone marks one line. To let people change the code, use the code editor.
 
 Keyboard: the copy button takes Tab, and Enter or Space presses it. The code itself takes no focus.
 
@@ -1853,7 +1917,7 @@ cui_loader(ui, .style = CUI_LOADER_DOTS);    /* also BARS, PULSE, ORBIT, GRID */
 cui_loader(ui, .style = CUI_LOADER_PULSE, .size = 32, .color = CUI_COLOR_ACCENT);
 ```
 
-A loader returns nothing, takes no `id` and keeps no state: it draws for as long as you call it, so call it only while the work is running. The five styles are `CUI_LOADER_DOTS` (the default), `CUI_LOADER_BARS`, `CUI_LOADER_PULSE`, `CUI_LOADER_ORBIT` and `CUI_LOADER_GRID`. `size` is the width in points and defaults to 24; every style is square except the dots, which are half as tall. `color` defaults to the secondary text color. While a loader is on screen the window redraws every frame, so an idle app does not sleep until it is gone. A loader says that something is happening, not how much is done: use `cui_progress` when you know the fraction, and `cui_spinner` for the plain ring.
+A loader returns nothing, takes no `id` and keeps no state: it draws for as long as you call it, so call it only while the work is running. The five styles are `CUI_LOADER_DOTS` (the default), `CUI_LOADER_BARS`, `CUI_LOADER_PULSE`, `CUI_LOADER_ORBIT` and `CUI_LOADER_GRID`. `size` is the width in points and defaults to 24; every style is square except the dots, which are half as tall. `color` defaults to the secondary text color. While a loader is on screen the window redraws every frame, so an idle app does not sleep until it is gone. A loader says that something is happening, not how much is done: use `cui_progress` when you know the fraction, and `cui_spinner` for the plain ring or for loading animations in dots (see [Dither spinners](components.md#dither-spinners)).
 
 ### Dock
 

@@ -931,7 +931,8 @@ static void cui__add_hit(cui_ctx *ui, cui_id id, cui_rect r, uint32_t flags) {
     h->id = id; h->rect = r; h->flags = flags; h->layer = ui->current_layer; h->order = ui->hit_count;
 }
 
-static cui_rect cui__xform_rect(cui_ctx *ui, cui_rect r) {
+/** Map a rectangle to the same logical coordinates used for hit testing. */
+cui_rect cui__xform_rect(cui_ctx *ui, cui_rect r) {
     cui_xform x = ui->dl.xform_stack[ui->dl.xform_depth - 1];
     if (x.scale == 1 && x.ox == 0 && x.oy == 0) return r;
     float s = ui->scale;

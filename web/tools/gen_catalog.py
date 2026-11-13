@@ -304,7 +304,8 @@ MAIN_CAT = {
     "Tabs": "navigation", "Sidebar navigation": "navigation", "Breadcrumb, pagination and stepper": "navigation",
     "Dropdown and context menu": "overlays", "Popover": "overlays", "Tooltip": "overlays", "Dialog": "overlays",
     "Sheet": "overlays", "Command palette": "overlays",
-    "Toast": "feedback", "Alert": "feedback", "Progress, meter, spinner and skeleton": "feedback", "Empty state": "feedback",
+    "Toast": "feedback", "Alert": "feedback", "Progress, meter, spinner and skeleton": "feedback", "Pattern meter": "feedback", "Dither spinners": "feedback",
+    "Empty state": "feedback",
     "Table": "data", "List and tree": "data", "Accordion": "data", "Timeline and progress ring": "data",
     "Reorderable list": "data", "Charts": "charts",
 }
@@ -673,7 +674,7 @@ DISPLAY_ONLY = {
     "progress-meter-spinner-and-skeleton", "timeline-and-progress-ring", "charts", "heatmap",
     "calendar-heatmap", "treemap-and-radar", "funnel-split-bar-and-waffle", "sankey",
     "bar-list-and-activity-rings", "scatter-and-bubble", "radial-gauge", "presence-counter-and-ticker",
-    "text-effects", "loaders", "chat", "uptime-bars", "readout", "dot-matrix-display", "chart-annotations"
+    "text-effects", "loaders", "dither-spinners", "status-spinner", "skeleton-group", "chat", "uptime-bars", "readout", "dot-matrix-display", "chart-annotations"
 }
 
 def keyboard_lines(body_html):

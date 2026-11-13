@@ -56,7 +56,17 @@ export class Preview {
     this.canvas = document.createElement('canvas');
     this.canvas.tabIndex = 0;
     this.canvas.setAttribute('aria-label', `Live preview: ${opts.content}`);
-    this.el.append(this.canvas);
+    // Browsers open the IME candidate window only at a focused DOM input, so
+    // while a text field in the preview is being edited, the keyboard goes to
+    // this hidden text area, kept at the field's caret (placeIme). It forwards
+    // keys like the canvas does, and committed compositions as text.
+    this.ime = document.createElement('textarea');
+    this.ime.className = 'ime-proxy';
+    this.ime.tabIndex = -1;
+    this.ime.setAttribute('aria-label', `Text input for the live preview: ${opts.content}`);
+    for (const [k, v] of [['autocomplete', 'off'], ['autocorrect', 'off'], ['autocapitalize', 'off'], ['spellcheck', 'false']]) this.ime.setAttribute(k, v);
+    this.el.append(this.canvas, this.ime);
+    this.composing = false;
     this.dirty = true;
     this.last = 0;
     this.visible = true;
@@ -251,6 +261,7 @@ export class Preview {
     this.wakeAt = w >= 0 ? now + w * 1000 / settings.speed : 0;
     const cur = CURSORS[x.inst_cursor(this.inst)] || 'default';
     if (this.canvas.style.cursor !== cur) this.canvas.style.cursor = cur;
+    this.placeIme();
     this.fpsWindow.push(now);
     while (this.fpsWindow.length && now - this.fpsWindow[0] > 1000) this.fpsWindow.shift();
     this.frames++;
@@ -277,16 +288,38 @@ export class Preview {
   }
 
   // ---- input --------------------------------------------------------------
+  hasKeyboard() { const a = document.activeElement; return !!a && (a === this.canvas || a === this.ime); }
+
+  // Moves the IME anchor to the caret of the field being edited and gives it
+  // the keyboard; gives the keyboard back to the canvas when no field is.
+  placeIme() {
+    const x = this.mod.exports, ime = this.ime, c = this.canvas;
+    const p = x.inst_text_rect ? x.inst_text_rect(this.inst) : 0;
+    const active = document.activeElement;
+    if (!p) {
+      if (active === ime && !this.composing) c.focus({ preventScroll: true });
+      return;
+    }
+    const [rx, ry, , rh] = new Float32Array(this.mod.memory().buffer, p, 4);
+    const k = this.fit;                       // CSS pixels per point
+    const h = Math.max(1, rh * k);
+    Object.assign(ime.style, { left: `${rx * k}px`, top: `${ry * k}px`, height: `${h}px`, lineHeight: `${h}px`,
+                               fontSize: `${Math.max(10, Math.round(h * 0.7))}px` });
+    if (active === c) ime.focus({ preventScroll: true });
+  }
+
   pos(e) {
     const r = this.canvas.getBoundingClientRect();
     return [(e.clientX - r.left) * (this.w / r.width), (e.clientY - r.top) * (this.h / r.height)];
   }
   bind() {
-    const c = this.canvas, x = this.mod.exports, inst = this.inst;
-    const on = (t, f, o) => { c.addEventListener(t, f, o); (this.offs ||= []).push(() => c.removeEventListener(t, f, o)); };
+    const c = this.canvas, ime = this.ime, x = this.mod.exports, inst = this.inst;
+    const on = (t, f, o, el = c) => { el.addEventListener(t, f, o); (this.offs ||= []).push(() => el.removeEventListener(t, f, o)); };
+    const onKeys = (t, f, o) => { on(t, f, o); on(t, f, o, ime); };   // the keyboard is on the canvas or the IME anchor
     let released = false;
     const takeOver = () => { if (!released) { released = true; if (x.inst_release_scripted(inst)) this.poke(); } };
-    for (const t of ['pointerenter', 'pointerdown', 'wheel', 'keydown']) on(t, takeOver, { capture: true });
+    for (const t of ['pointerenter', 'pointerdown', 'wheel']) on(t, takeOver, { capture: true });
+    onKeys('keydown', takeOver, { capture: true });
     // Touch: on a component page the page itself scrolls over a preview
     // (pan-y); in a full app a vertical swipe scrolls the app instead of
     // dragging, and a sideways one drags (sliders, carousels).
@@ -327,7 +360,7 @@ export class Preview {
     });
     on('pointerdown', (e) => {
       if (e.pointerType === 'mouse' && e.button > 2) return;
-      c.focus({ preventScroll: true });
+      if (document.activeElement !== ime) c.focus({ preventScroll: true });   // clicks inside the field being edited keep the IME anchor
       try { c.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointers have no capture */ }
       const [mx, my] = this.pos(e);
       x.inst_mouse_move(inst, mx, my);
@@ -362,7 +395,8 @@ export class Preview {
       if (this.opts.fill || x.inst_scroll_consumed(inst)) e.preventDefault();
       this.poke();
     }, { passive: false });
-    on('keydown', (e) => {
+    onKeys('keydown', (e) => {
+      if (e.isComposing || e.keyCode === 229) return;   // a key for the input method
       if (PASS.has(e.code) || ((e.ctrlKey || e.metaKey) && PASS_CTRL.has(e.code)) || (e.ctrlKey && e.shiftKey && e.code === 'KeyI')) return;
       const mods = (e.shiftKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.altKey ? 4 : 0) | (e.metaKey ? 8 : 0);
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyV') { this.pasteMods = mods; return; }   // paste event follows
@@ -373,14 +407,15 @@ export class Preview {
       if (key || e.key.length === 1) e.preventDefault();
       this.poke();
     });
-    on('keyup', (e) => {
+    onKeys('keyup', (e) => {
+      if (e.isComposing) return;
       const key = KEYS[e.code];
       const mods = (e.shiftKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.altKey ? 4 : 0) | (e.metaKey ? 8 : 0);
       if (!key) { if (MODKEYS.has(e.key)) { x.inst_key(inst, 0, 0, mods); this.poke(); } return; }   // releasing Ctrl after a shortcut must register
       x.inst_key(inst, key, 0, mods);
       this.poke();
     });
-    on('paste', (e) => {
+    onKeys('paste', (e) => {
       const text = e.clipboardData?.getData('text/plain') ?? '';
       this.mod.setClipboardCache(text);
       x.inst_key(inst, KEYS.KeyV, 1, this.pasteMods || 2);
@@ -388,8 +423,29 @@ export class Preview {
       e.preventDefault();
       this.poke();
     });
-    on('focus', () => { x.inst_focus(inst, 1); this.poke(); this.opts.onStats?.(this); });
-    on('blur', () => {
+    // compositions: only the committed text goes to CUI, which draws no preedit;
+    // the anchor shows it while it is being composed
+    const fitText = () => { ime.style.width = '1px'; ime.style.width = `${ime.scrollWidth + 2}px`; };
+    on('compositionstart', () => { this.composing = true; ime.classList.add('composing'); }, undefined, ime);
+    on('compositionend', (e) => {
+      this.composing = false;
+      ime.classList.remove('composing');
+      ime.value = '';
+      ime.style.width = '';
+      if (e.data) this.mod.text(inst, e.data);
+      this.poke();
+    }, undefined, ime);
+    on('input', (e) => {
+      if (this.composing || e.isComposing) { fitText(); return; }
+      // text no keydown delivered (virtual keyboards, some dead keys); compositions arrive at compositionend
+      if (e.data && e.inputType === 'insertText') { this.mod.text(inst, e.data); this.poke(); }
+      ime.value = '';
+    }, undefined, ime);
+    // moving the keyboard between the canvas and the IME anchor is not a focus change for CUI
+    const inside = (el) => el === c || el === ime;
+    onKeys('focus', (e) => { if (inside(e.relatedTarget)) return; x.inst_focus(inst, 1); this.poke(); this.opts.onStats?.(this); });
+    onKeys('blur', (e) => {
+      if (inside(e.relatedTarget)) return;
       // release anything held so a key never sticks
       for (const k of Object.values(KEYS)) x.inst_key(inst, k, 0, 0);
       x.inst_focus(inst, 0);

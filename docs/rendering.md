@@ -46,6 +46,9 @@ All fields except `x, y, u, v, lx, ly, color` are the same for every vertex of a
 | `CUI_SHADE_SHADOW` | 2 | Gaussian blurred rounded rectangle |
 | `CUI_SHADE_IMAGE` | 3 | RGBA texture × `color`, masked by the rounded rectangle |
 | `CUI_SHADE_SOLID` | 4 | `color` (anti-aliasing is in the geometry) |
+| `CUI_SHADE_DITHER` | 5 | Ordered dither: `border_color` where `border` ≤ the 8×8 Bayer threshold of cell `floor(u, v)` < `color.a`, masked by the rounded rectangle |
+
+Dither vertices carry the cell grid in `u, v` (in cells, interpolated), the density in `color.a` (interpolated) and a floor in `border`. Each cell is either the dot color or nothing, so the dither components (the dither progress bar, the pattern meter, dither area fills and the veil) look the same in every renderer. A renderer that skips mode 5 still draws everything else.
 
 ## Reference shader (GLSL 330)
 
@@ -75,6 +78,12 @@ float erf_(float x) {                              // Abramowitz and Stegun 7.1.
     float t = 1.0 / (1.0 + 0.3275911 * x);
     return s * (1.0 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * exp(-x * x));
 }
+float bayer8(vec2 p) {                             // 8x8 Bayer threshold of cell p, from the bits of x ^ y and y
+    ivec2 q = ivec2(mod(floor(p), 8.0));
+    int a = q.x ^ q.y, y = q.y;
+    int m = ((a & 1) << 5) | ((y & 1) << 4) | ((a & 2) << 2) | ((y & 2) << 1) | ((a & 4) >> 1) | ((y & 4) >> 2);
+    return (float(m) + 0.5) / 64.0;
+}
 void main() {
     int mode = int(v_params.y + 0.5);
     vec4 c = v_color;
@@ -89,6 +98,10 @@ void main() {
     } else if (mode == 2) {
         float a = c.a * 0.5 * (1.0 - erf_(d / (max(v_params.x, 0.01) * 1.41421356)));
         frag = vec4(c.rgb * a, a);
+    } else if (mode == 5) {
+        float t = bayer8(v_uv);
+        float k = t >= v_params.x && t < c.a ? v_bcolor.a * clamp(0.5 - d, 0.0, 1.0) : 0.0;
+        frag = vec4(v_bcolor.rgb * k, k);
     } else {
         float k = c.a * clamp(0.5 - d, 0.0, 1.0);
         vec4 t = texture(u_tex, v_uv);

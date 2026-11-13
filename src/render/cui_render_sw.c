@@ -2,7 +2,7 @@
  *
  * Implements exactly the same shading as the GPU shader (see
  * docs/rendering.md): signed distance rounded rectangles with borders,
- * gaussian shadows, alpha-texture text, images and solid geometry, blended
+ * gaussian shadows, alpha-texture text, images, solid geometry and ordered dither, blended
  * with premultiplied alpha. Rendering can be split over several threads by
  * horizontal bands. */
 #include "../cui_internal.h"
@@ -187,6 +187,14 @@ static inline float cui__erf(float x) {
 }
 
 static inline float cui__sat(float x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
+
+/* The 8x8 Bayer threshold of the cell at (u, v), from the bits of x ^ y and y: the same
+ * arithmetic as the shader, so both renderers light the same cells. */
+static inline float cui__sw_bayer(float u, float v) {
+    unsigned x = (unsigned)(int)floorf(u) & 7u, y = (unsigned)(int)floorf(v) & 7u, a = x ^ y;
+    unsigned m = ((a & 1u) << 5) | ((y & 1u) << 4) | ((a & 2u) << 2) | ((y & 2u) << 1) | ((a & 4u) >> 1) | ((y & 4u) >> 2);
+    return ((float)m + 0.5f) / 64.0f;
+}
 
 /* Shadow falloff 0.5 * (1 - erf(z)) over the z a shadow uses (-4 to 2.8, outside it the
  * value is 1 or ignored), as a table read with linear interpolation: within 2e-6 of the
@@ -389,6 +397,14 @@ static void cui__raster_tri(const cui__sw_job *job, const cui_vertex *a, const c
                     if (z > CUI__SHADOW_Z1) continue;
                     float al = ca * cui__shadow_falloff(z);
                     o.r = cr * al; o.g = cg * al; o.b = cb * al; o.a = al;
+                } else if (mode == CUI_SHADE_DITHER) {
+                    /* color alpha is the density, border the floor, border color the dot */
+                    float cov = cui__sat(0.5f - d);
+                    if (cov <= 0) continue;
+                    float t = cui__sw_bayer(a->u * w0 + b->u * w1 + c->u * w2, a->v * w0 + b->v * w1 + c->v * w2);
+                    if (t < bw || t >= ca) continue;
+                    float k = bca * cov;
+                    o.r = bcr * k; o.g = bcg * k; o.b = bcb * k; o.a = k;
                 } else { /* image */
                     float cov = cui__sat(0.5f - d);
                     if (cov <= 0) continue;
@@ -413,6 +429,7 @@ static bool cui__raster_quad(const cui__sw_job *job, const cui_vertex *v0, const
     if (v0->x >= v1->x || v0->y >= v3->y) return false;
     if (memcmp(&v0->color, &v1->color, 4) != 0 || memcmp(&v2->color, &v3->color, 4) != 0) return false;
     int mode = (int)(v0->mode + 0.5f);
+    if (mode == CUI_SHADE_DITHER) return false;   /* the triangle path has the cell lookup */
     float qx0 = v0->x, qy0 = v0->y, qx1 = v1->x, qy1 = v3->y;
     int x0 = CUI_MAX(cx0, (int)ceilf(qx0 - 0.5f)), x1 = CUI_MIN(cx1, (int)ceilf(qx1 - 0.5f));
     int y0 = CUI_MAX(cy0, (int)ceilf(qy0 - 0.5f)), y1 = CUI_MIN(cy1, (int)ceilf(qy1 - 0.5f));

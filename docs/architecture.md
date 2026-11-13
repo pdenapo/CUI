@@ -60,7 +60,7 @@ Components are grouped by family, one family per file, so a change to one compon
 | `cui_overlay.c` | popovers, menus, dialogs, sheets, toasts, tooltips, the command palette |
 | `cui_pickers.c` | select, combobox, date and time pickers, color picker |
 | `cui_data.c`, `cui_grid.c`, `cui_treetable.c` | tables, lists, trees, the data grid, tree tables and path bars |
-| `cui_charts.c`, `cui_viz.c`, `cui_dials.c`, `cui_flame.c` | charts, heatmaps, gauges, knobs, faders, the flame graph, the trace viewer and the network waterfall (which share its ruler) |
+| `cui_charts.c`, `cui_viz.c`, `cui_dials.c`, `cui_flame.c` | charts (with dither area fills), the pattern meter, heatmaps, gauges, knobs, faders, the flame graph, the trace viewer and the network waterfall (which share its ruler) |
 | `cui_devtools.c`, `cui_devpanels.c`, `cui_devviews.c`, `cui_graph.c`, `cui_regex.c` | developer tools: key-value editor, problems panel, pipeline, test explorer, query builder, schedule picker and cron, keymap; regex tester, stack trace, request bar, feature flags, API explorer; uptime, time histogram, coverage, blame; the commit graph and the dependency graph; the regular expression engine |
 | `cui_instrument.c` | instruments: the dot-matrix chart, chart annotations (also drawn by line and bar charts), the event track, the readout and the dot-matrix display, with the shared axis |
 | `cui_creative.c` | creative controls: the status tag, the ratio slider, and the controls in a control well (gradient slider, step slider, palette strip, aspect ratio picker, option field with action, seed field), with the well they share |
@@ -69,6 +69,7 @@ Components are grouped by family, one family per file, so a change to one compon
 | `cui_ai.c`, `cui_voice.c`, `cui_social.c`, `cui_media.c`, `cui_photo.c`, `cui_emoji.c` | AI, voice, conversation, media and image components |
 | `cui_chrome.c`, `cui_dock.c`, `cui_tools.c`, `cui_nodes.c`, `cui_curves.c` | app chrome, docking, tool panels, node and curve editors |
 | `cui_canvas.c` | canvas and bars: the format bar, live cursors and the presence pill, canvas controls, the result card, the selection bar |
+| `cui_loading.c` | loading animations in dots: the dither styles of the spinner and the status spinner |
 | `cui_actions.c`, `cui_extras.c`, `cui_disclosure.c`, `cui_motion.c`, `cui_tour.c`, `cui_files.c` | the rest, by family |
 
 ## The core ideas

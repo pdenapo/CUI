@@ -324,7 +324,7 @@ function previewBlock(opts) {
       h('span', {}, `${s.tris.toLocaleString()} triangles`),
       h('span', {}, p.rendererName() + (p.fit < 1 ? `, shown at ${Math.round(p.fit * 100)}%` : '')),
       settings.speed !== 1 ? h('span', {}, `${settings.speed}× speed`) : null,
-      document.activeElement === p.canvas
+      p.hasKeyboard()
         ? h('span', { class: 'hint kbd-on' }, 'Keyboard goes to the preview. Click outside to leave.')
         : h('span', { class: 'hint' }, opts.fill ? 'Click inside to use the keyboard' : 'Click to focus, then Tab through it. Drag the corner to resize.')].filter(Boolean));
   }
@@ -914,7 +914,8 @@ function siteFooter() {
 // Keep this to recent additions: drop ids from here once they have settled in.
 const NEW = new Set(['status-tag', 'ratio-slider', 'gradient-slider', 'step-slider', 'palette-strip', 'aspect-ratio-picker',
                      'option-field-with-action', 'seed-field', 'grouped-toolbar', 'format-bar', 'live-cursors', 'canvas-controls',
-                     'result-card', 'selection-bar', 'voice-waveform', 'voice-recorder', 'voice-note', 'voice-session'].filter((id) => CAT.items[id]));
+                     'result-card', 'selection-bar', 'voice-waveform', 'voice-recorder', 'voice-note', 'voice-session',
+                     'pattern-meter', 'veil', 'dither-spinners', 'status-spinner', 'skeleton-group'].filter((id) => CAT.items[id]));
 const newBadge = (id, cls = 'new-badge') => (NEW.has(id) ? h('span', { class: cls, title: 'Recently added' }, 'New') : null);
 
 // the query part of a hash: #/components?q=grid&cat=charts
@@ -1548,7 +1549,7 @@ function openSearch() {
 $('#search-open').addEventListener('click', openSearch);
 document.addEventListener('keydown', (e) => {
   const t = e.target;
-  if (t instanceof HTMLCanvasElement) return;   // the preview has the keyboard
+  if (t instanceof HTMLCanvasElement || t.classList?.contains('ime-proxy')) return;   // the preview has the keyboard
   const typing = t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openSearch(); return; }
   if (typing) return;

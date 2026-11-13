@@ -471,6 +471,109 @@ void cui__draw_triangles(cui_ctx *ui, const cui_cvert *src, int nv, const uint32
     for (int i = 0; i < ni; i++) ix[i] = base + idx[i];
 }
 
+/* ---- ordered dither ---- */
+
+/* what every dither vertex shares: the grid in pixels, the cut, the dot color and the floor */
+typedef struct { float cell, gx, gy, phx, phy, cx, cy, hw, hh, fl; cui_corners rr; cui_color c; } cui__dither_px;
+
+static bool cui__dither_setup(cui_ctx *ui, const cui__dither *d, cui__dither_px *g, cui_xform *x) {
+    g->c = cui_color_of(ui, d->color);
+    if (g->c.a == 0) return false;
+    *x = cui__xf(ui);
+    float s = ui->scale * x->scale;
+    /* whole pixel cells on a whole pixel origin: a pixel center is never on a cell edge, so
+     * both renderers pick the same cell for every pixel */
+    g->cell = CUI_MAX(1.0f, roundf((d->cell > 0 ? d->cell : 2.0f) * s));
+    g->gx = roundf(d->origin.x * s + x->ox); g->gy = roundf(d->origin.y * s + x->oy);
+    g->phx = roundf(d->phase.x); g->phy = roundf(d->phase.y);
+    g->cx = 0; g->cy = 0; g->hw = 1e6f; g->hh = 1e6f;
+    g->rr = (cui_corners){ 0, 0, 0, 0 };
+    if (d->shape.w > 0 && d->shape.h > 0) {
+        g->hw = d->shape.w * 0.5f * s; g->hh = d->shape.h * 0.5f * s;
+        g->cx = (d->shape.x + d->shape.w * 0.5f) * s + x->ox; g->cy = (d->shape.y + d->shape.h * 0.5f) * s + x->oy;
+        float m = CUI_MIN(g->hw, g->hh);
+        g->rr.tl = CUI_MIN(d->radius.tl * s, m); g->rr.tr = CUI_MIN(d->radius.tr * s, m);
+        g->rr.br = CUI_MIN(d->radius.br * s, m); g->rr.bl = CUI_MIN(d->radius.bl * s, m);
+    }
+    g->c = cui__xa(g->c, x->alpha);
+    g->fl = cui__clampf(d->floor, 0, 1);
+    cui__set_texture(ui, 0);
+    return true;
+}
+
+/* one vertex at pixel (px, py); `density` is the byte that the renderers compare thresholds with */
+static void cui__dither_vert(cui_vertex *v, const cui__dither_px *g, float px, float py, int density) {
+    v->x = px; v->y = py;
+    v->u = (px - g->gx) / g->cell + g->phx; v->v = (py - g->gy) / g->cell + g->phy;
+    v->lx = px - g->cx; v->ly = py - g->cy; v->hw = g->hw; v->hh = g->hh;
+    v->r_tl = g->rr.tl; v->r_tr = g->rr.tr; v->r_br = g->rr.br; v->r_bl = g->rr.bl;
+    v->border = g->fl;
+    v->mode = CUI_SHADE_DITHER;
+    v->color = cui__rgba(255, 255, 255, density);
+    v->border_color = g->c;
+}
+
+static int cui__dither_byte(float density) { return (int)(cui__clampf(density, 0, 1) * 255.0f + 0.5f); }
+
+void cui__draw_dither_mesh(cui_ctx *ui, const cui__dither *d, const cui__dvert *src, int nv, const uint32_t *idx, int ni) {
+    cui__dither_px g;
+    cui_xform x;
+    if (nv <= 0 || ni <= 0 || !cui__dither_setup(ui, d, &g, &x)) return;
+    float s = ui->scale * x.scale;
+    uint32_t base;
+    cui_vertex *v = cui__reserve(ui, nv, ni, &base);
+    for (int i = 0; i < nv; i++) cui__dither_vert(&v[i], &g, src[i].x * s + x.ox, src[i].y * s + x.oy, cui__dither_byte(src[i].density));
+    uint32_t *ix = cui__idx(ui, ni);
+    for (int i = 0; i < ni; i++) ix[i] = base + idx[i];
+}
+
+void cui__draw_dither_cells(cui_ctx *ui, const cui__dither *d, int i0, int j0, int cols, int rows, const float *density) {
+    cui__dither_px g;
+    cui_xform x;
+    if (cols <= 0 || rows <= 0 || !cui__dither_setup(ui, d, &g, &x)) return;
+    /* a run of cells with the same density in a row is one quad: count them, then emit them */
+    int quads = 0;
+    for (int j = 0; j < rows; j++)
+        for (int i = 0; i < cols;) {
+            int a = cui__dither_byte(density[j * cols + i]), e = i + 1;
+            while (e < cols && cui__dither_byte(density[j * cols + e]) == a) e++;
+            quads += a > 0;
+            i = e;
+        }
+    if (!quads) return;
+    uint32_t base;
+    cui_vertex *v = cui__reserve(ui, quads * 4, quads * 6, &base);
+    uint32_t *ix = cui__idx(ui, quads * 6);
+    int q = 0;
+    for (int j = 0; j < rows; j++) {
+        float y0 = g.gy + (float)(j0 + j) * g.cell, y1 = y0 + g.cell;
+        for (int i = 0; i < cols;) {
+            int a = cui__dither_byte(density[j * cols + i]), e = i + 1;
+            while (e < cols && cui__dither_byte(density[j * cols + e]) == a) e++;
+            if (a > 0) {
+                float x0 = g.gx + (float)(i0 + i) * g.cell, x1 = g.gx + (float)(i0 + e) * g.cell;
+                cui__dither_vert(&v[q * 4 + 0], &g, x0, y0, a);
+                cui__dither_vert(&v[q * 4 + 1], &g, x1, y0, a);
+                cui__dither_vert(&v[q * 4 + 2], &g, x1, y1, a);
+                cui__dither_vert(&v[q * 4 + 3], &g, x0, y1, a);
+                uint32_t b = base + (uint32_t)(q * 4);
+                ix[q * 6 + 0] = b; ix[q * 6 + 1] = b + 1; ix[q * 6 + 2] = b + 2;
+                ix[q * 6 + 3] = b; ix[q * 6 + 4] = b + 2; ix[q * 6 + 5] = b + 3;
+                q++;
+            }
+            i = e;
+        }
+    }
+}
+
+void cui__draw_dither_rect(cui_ctx *ui, const cui__dither *d, cui_rect r, float d0, float d1, bool vertical) {
+    if (r.w <= 0 || r.h <= 0 || (d0 <= 0 && d1 <= 0)) return;
+    cui__dvert v[4] = { { r.x, r.y, d0 }, { r.x + r.w, r.y, vertical ? d0 : d1 },
+                        { r.x + r.w, r.y + r.h, d1 }, { r.x, r.y + r.h, vertical ? d1 : d0 } };
+    static const uint32_t idx[6] = { 0, 1, 2, 0, 2, 3 };
+    cui__draw_dither_mesh(ui, d, v, 4, idx, 6);
+}
+
 void cui__draw_text_at(cui_ctx *ui, cui_font font, float size, float x, float y, cui__text_anchor anchor, cui_color color, const char *s, bool tab) {
     float w = cui__text_width(ui, font, size, s, -1, tab);
     float fh = cui__font_line_height(ui, font, size);

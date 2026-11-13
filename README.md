@@ -316,7 +316,7 @@ To use CUI inside an engine with your own window and renderer, see [Integration]
 - **No screen reader support.** There is no accessibility tree yet. This rules CUI out for apps that must be accessible to blind users.
 - **The keyboard does not reach everything.** Most components work from the keyboard and each one's page lists its keys. Some parts still need a pointer: the rating, the histogram slider's handles, swipe actions, the reorderable list, the JSON viewer, the agent plan's steps, blame, the time histogram, and the choices inside the open time picker and color picker.
 - **Complex scripts are partial.** Text is UTF-8 with kerning and font fallback, and layouts mirror for right-to-left languages. Arabic-script shaping and bidirectional text are an optional, experimental build option for static text ([details](docs/integration.md#optional-arabic-script-text-shaping)). CJK works once you add a fallback font.
-- **Input methods compose in the system's window.** Committed text arrives; the text being composed is not drawn inline.
+- **Input methods compose in the system's window.** Committed text arrives; the text being composed is not drawn inline. The window opens at the caret on Windows, macOS, SDL2 and the docs site, but not yet on the X11 and GLFW backends.
 - **No native Wayland backend.** Use the SDL2 or GLFW backend, or XWayland.
 - **No Android or iOS.** Layouts adapt to phone widths and touch, and apps run in mobile browsers, but there is no platform layer for phones.
 - **It is new.** Version 1.0 was released in November 2026, so it has little real-world use behind it yet. The [changelog](CHANGELOG.md) lists what each release changed.

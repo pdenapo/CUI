@@ -85,6 +85,7 @@ static cui_key cui__mac_key(NSEvent *e) {
 @interface CUIView : NSView <NSTextInputClient>
 @property (nonatomic, assign) cui_app *app;
 @property (nonatomic, strong) NSTrackingArea *tracking;
+@property (nonatomic, assign) NSRect caret;   /* the focused text field's caret in view points, for the input method */
 @end
 
 @implementation CUIView
@@ -192,7 +193,7 @@ static cui_key cui__mac_key(NSEvent *e) {
 - (NSArray<NSAttributedStringKey> *)validAttributesForMarkedText { return @[]; }
 - (NSRect)firstRectForCharacterRange:(NSRange)r actualRange:(NSRangePointer)a {
     (void)r; (void)a;
-    NSRect local = NSMakeRect(0, 0, 1, 1);
+    NSRect local = NSIsEmptyRect(self.caret) ? NSMakeRect(0, 0, 1, 1) : self.caret;
     return [self.window convertRectToScreen:[self convertRect:local toView:nil]];
 }
 - (NSUInteger)characterIndexForPoint:(NSPoint)p { (void)p; return NSNotFound; }
@@ -229,6 +230,18 @@ static void cui__mac_wake(void) {
 @end
 
 static CUIPlat *cui__p(cui_app *app) { return (__bridge CUIPlat *)app->plat; }
+
+/* CUI calls this every frame a text field has focus, with the caret in window
+ * points, top-left origin, the same space as the flipped view. The input method
+ * reads it back through firstRectForCharacterRange and is told when it moves. */
+static void cui__mac_text_input_rect(void *user, cui_rect caret) {
+    cui_app *app = user;
+    CUIView *v = cui__p(app).view;
+    NSRect r = NSMakeRect(caret.x, caret.y, caret.w < 1 ? 1 : caret.w, caret.h < 1 ? 1 : caret.h);
+    if (NSEqualRects(r, v.caret)) return;
+    v.caret = r;
+    [v.inputContext invalidateCharacterCoordinates];
+}
 
 static void cui__mac_set_cursor(void *user, cui_cursor c) {
     cui_app *app = user;
@@ -323,6 +336,7 @@ bool cui__plat_init(cui_app *app) {
         pi.set_clipboard = cui__mac_set_clip;
         pi.get_clipboard = cui__mac_get_clip;
         pi.set_cursor = cui__mac_set_cursor;
+        pi.set_text_input_rect = cui__mac_text_input_rect;
         cui_set_platform(app->ui, &pi);
     }
     return true;

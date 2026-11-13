@@ -62,6 +62,8 @@ cui_set_platform(ui, &(cui_platform_iface){
 });
 ```
 
+CUI calls `set_text_input_rect` every frame a text field has focus, with the caret in window points (top-left origin, one line tall). Place the input method's composition and candidate windows there; the built-in Win32, Cocoa and SDL2 backends and the docs site do.
+
 Useful queries for your app: `cui_wants_keyboard` (a text field has focus), `cui_wants_mouse` (the pointer is over the UI), `cui_get_cursor`.
 
 ## Using the built-in backends with your loop
