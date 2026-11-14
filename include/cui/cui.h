@@ -858,7 +858,8 @@ typedef struct cui_progress_opts {
 } cui_progress_opts;
 CUI_API void cui_progress_ex(cui_ctx *ui, float value, const cui_progress_opts *opts);
 /* Spinner: says that something is happening, for as long as you call it. `size` is its
- * height in points (20 when 0). The default style is a ring with a sweeping arc; the others
+ * height in points (20 when 0). The default style is a ring with a sweeping arc
+ * that holds still with reduced motion. The other styles
  * are drawn in dots on an 8x8 ordered dither, one point a dot below 32 points tall and two
  * from there, and each fits a kind of wait:
  *
@@ -989,11 +990,11 @@ typedef struct cui_list_item_opts {
 CUI_API bool cui_list_item_ex(cui_ctx *ui, const char *title, const cui_list_item_opts *opts);
 
 /* Virtual list: only the visible rows are built, so lists with a million
- * rows stay fast. Fills first/last with the visible range. */
+ * rows stay fast. Fills first/last with the visible range for this row count. */
 CUI_API void cui_virtual_list_begin(cui_ctx *ui, const char *id, int count, float row_height, cui_size height, int *first, int *last);
 CUI_API void cui_virtual_list_end(cui_ctx *ui);
 
-/* Table */
+/* Table: sortable headers and selectable rows show keyboard focus. */
 typedef struct cui_table_column {
     const char *title;         /* text of the column's header */
     cui_size width;            /* default fill */
@@ -1098,7 +1099,7 @@ CUI_API int cui_pattern_meter_ex(cui_ctx *ui, const char *id, const cui_meter_pa
 
 /* Images */
 CUI_API cui_texture cui_image_create(cui_ctx *ui, int w, int h, const void *rgba);
-CUI_API cui_texture cui_image_load(cui_ctx *ui, const char *path, int *w, int *h);   /* PNG/JPEG via stb_image */
+CUI_API cui_texture cui_image_load(cui_ctx *ui, const char *path, int *w, int *h);   /* UTF-8 path, PNG/JPEG via stb_image */
 CUI_API void cui_image_destroy(cui_ctx *ui, cui_texture tex);
 typedef struct cui_image_opts {
     int _;
@@ -1394,6 +1395,7 @@ typedef struct cui_grid_opts {
     bool hide_checkboxes;      /* with selected: rows still select (click, Shift, Ctrl) but no checkbox column */
     int *anchor;               /* the row Shift ranges start from, optional (in and out like cursor) */
 } cui_grid_opts;
+/* Returns a visible range for the current row count, even after the grid shrinks. */
 CUI_API bool cui_data_grid_begin_ex(cui_ctx *ui, const char *id, const cui_grid_column *columns, int column_count, int row_count,
                                     int *first, int *last, const cui_grid_opts *opts);
 CUI_API bool cui_data_grid_row(cui_ctx *ui, int row);   /* true when the row was clicked */
@@ -1860,7 +1862,7 @@ typedef struct cui_chat_opts {
 } cui_chat_opts;
 CUI_API void cui_chat_message_ex(cui_ctx *ui, const char *text, const cui_chat_opts *opts);
 CUI_API void cui_chat_divider(cui_ctx *ui, const char *label);       /* "Today" */
-CUI_API void cui_typing_indicator(cui_ctx *ui, const char *name);    /* bouncing dots */
+CUI_API void cui_typing_indicator(cui_ctx *ui, const char *name);    /* bouncing dots, still with reduced motion */
 
 /* Comment with replies. depth indents replies under a connector line.
  * Returns CUI_COMMENT_LIKE or CUI_COMMENT_REPLY flags for what was clicked;
@@ -2043,6 +2045,7 @@ typedef struct cui_sankey_opts {
     float node_width;          /* width of the node bars in points, default 6 */
     const cui_color *node_colors;   /* one per node, colored by meaning; `NULL`, or an unset entry, falls back to the palette for outcomes and neutral gray for sources and steps */
 } cui_sankey_opts;
+/* Returns the clicked node index, node_count + the clicked input link index, or -1. */
 CUI_API int cui_sankey_ex(cui_ctx *ui, const char *id, const char *const *nodes, int node_count, const cui_sankey_link *links, int link_count,
                           const cui_sankey_opts *opts);
 
@@ -2342,7 +2345,8 @@ typedef struct cui_tool_call_opts {
 } cui_tool_call_opts;
 CUI_API void cui_tool_call_ex(cui_ctx *ui, const char *id, const char *name, const cui_tool_call_opts *opts);
 
-/* Agent plan: steps with their status on a connected rail, and progress. */
+/* Agent plan: steps with their status on a connected rail, and progress.
+ * Reduced motion holds the running glyph still, including in tool calls. */
 typedef struct cui_plan_step {
     const char *title;         /* the step's text; shimmers while the step is running */
     const char *detail;        /* smaller muted line under the title (red when the step failed); may be `NULL` */
@@ -2602,6 +2606,7 @@ typedef struct cui_week_opts {
     cui_size height;
     bool read_only;
 } cui_week_opts;
+/* Returns the activated event index or -1. Read-only events still activate. */
 CUI_API int cui_week_calendar_ex(cui_ctx *ui, const char *id, cui_date week_start, cui_cal_event *events, int count, const cui_week_opts *opts);
 
 /* Month calendar: a month grid with events. All-day and multi-day events
@@ -2673,6 +2678,7 @@ typedef struct cui_gantt_opts {
     int today;                 /* day to mark as today, counted from `origin`, with an accent line and a "Today" chip; 0 marks none */
     bool read_only;
 } cui_gantt_opts;
+/* Returns the activated task index or -1. Read-only tasks still activate. */
 CUI_API int cui_gantt_ex(cui_ctx *ui, const char *id, cui_gantt_task *tasks, int count, cui_date origin, int days, const cui_gantt_opts *opts);
 
 /* ------------------------------------------------------------------------ */
@@ -4148,6 +4154,7 @@ typedef struct cui_query_opts {
     int max_depth;             /* how deep groups may nest, default 3 */
     bool read_only;
 } cui_query_opts;
+/* Read-only and disabled builders preserve the input rules and count. */
 CUI_API bool cui_query_builder_ex(cui_ctx *ui, const char *id, const cui_query_field *fields, int field_count,
                                   cui_query_node *nodes, int *count, int capacity, const cui_query_opts *opts);
 /* the operators of a type: text "is", "is not", "contains", "does not contain",
@@ -4339,7 +4346,7 @@ typedef struct cui_trace_opts {
 } cui_trace_opts;
 typedef struct cui_trace_result {
     bool selection_changed;    /* `*selected` changed this frame (click or keys) */
-    bool view_changed;         /* the visible time range or the scroll in `*view` changed (zoom, pan, fit) */
+    bool view_changed;         /* time range, scroll position, or measurement in `*view` changed */
     int hovered;               /* span under the pointer, or -1 */
 } cui_trace_result;
 CUI_API cui_trace_result cui_trace_view_ex(cui_ctx *ui, const char *id, cui_trace_track *tracks, int track_count,
@@ -4649,7 +4656,7 @@ typedef struct cui_dot_chart_opts {
 } cui_dot_chart_opts;
 
 typedef struct cui_dot_chart_result {
-    int hovered;               /* the sample under the pointer or the keyboard cursor, or -1 */
+    int hovered;               /* pointer or keyboard sample, middle on first keyboard activation, else -1 */
     double x;                  /* that sample's x, in x units */
     float value;               /* the stacked value there */
     bool clicked;              /* the plot was clicked, or Enter was pressed on it, this frame: `x` is where */

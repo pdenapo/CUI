@@ -46,7 +46,7 @@ int cui_fs_list(void *user, const char *path, cui_file_entry *out, int cap, char
     do {
         if (!wcscmp(fd.cFileName, L".") || !wcscmp(fd.cFileName, L"..")) continue;
         if (!hidden && ((fd.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN) || fd.cFileName[0] == L'.')) continue;
-        if (count >= cap) break;
+        if (count >= cap || used >= names_cap) break;   /* with no room left the call below would only measure */
         int len = WideCharToMultiByte(CP_UTF8, 0, fd.cFileName, -1, names + used, (int)(names_cap - used), NULL, NULL);
         if (len <= 0) break;   /* out of name space */
         cui_file_entry *e = &out[count++];

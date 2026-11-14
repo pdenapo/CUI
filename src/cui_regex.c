@@ -383,7 +383,8 @@ static int cui__rx_cont(cui__rx_m *M, int i, const cui__rx_k *k) {
         break;
     }
     case RK_GROUP_END: {
-        int g = R->node[k->node].group;
+        int g = R->node[k->node].group;   /* -1 for a non-capturing (?: ) group */
+        if (g < 0) { r = cui__rx_cont(M, i, k->next); break; }
         int old = M->cap[g][1];
         M->cap[g][1] = i;
         r = cui__rx_cont(M, i, k->next);
@@ -457,12 +458,12 @@ static int cui__rx_match(cui__rx_m *M, int node, int i, const cui__rx_k *k) {
         for (int a = 0; a < n->nkid && !r && !M->abort; a++) r = cui__rx_match(M, R->kid[n->kid + a], i, k);
         break;
     case RX_GROUP: {
-        int g = n->group;
-        int o0 = M->cap[g][0], o1 = M->cap[g][1];
-        M->cap[g][0] = i;
+        int g = n->group;   /* -1 for a non-capturing (?: ) group */
+        int o0 = g >= 0 ? M->cap[g][0] : 0, o1 = g >= 0 ? M->cap[g][1] : 0;
+        if (g >= 0) M->cap[g][0] = i;
         cui__rx_k end = { RK_GROUP_END, node, 0, 0, k };
         r = cui__rx_match(M, R->kid[n->kid], i, &end);
-        if (!r) { M->cap[g][0] = o0; M->cap[g][1] = o1; }
+        if (!r && g >= 0) { M->cap[g][0] = o0; M->cap[g][1] = o1; }
         break;
     }
     case RX_REPEAT: {

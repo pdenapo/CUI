@@ -303,6 +303,7 @@ static void cui__paint_number_roll(cui_ctx *ui, cui_node *n, void *data) {
     cui_pop_clip(ui);
 }
 
+/** Roll numbers that fit the animation slots and display longer text in full. */
 void cui_number_roll_ex(cui_ctx *ui, const char *id_str, const char *text, const cui_text_fx_opts *o) {
     cui_text_fx_opts d;
     memset(&d, 0, sizeof d);
@@ -312,12 +313,23 @@ void cui_number_roll_ex(cui_ctx *ui, const char *id_str, const char *text, const
     cui__nr_state *st = cui_state(ui, id, sizeof *st);
     float size = cui__fs(ui, o->size > 0 ? o->size : ui->theme.text_body);
     cui_font font = o->font;
+    /* The affixes are fixed and the middle rolls one code point per slot. */
+    int len = (int)strlen(text), a = 0, b = len;
+    while (a < len && !(text[a] >= '0' && text[a] <= '9')) a++;
+    while (b > a && !(text[b - 1] >= '0' && text[b - 1] <= '9')) b--;
+    if (a > 0 && text[a - 1] == '-') a--;   /* a sign rolls with the figure */
+    if (a >= (int)sizeof st->prefix || len - b >= (int)sizeof st->suffix || b - a > CUI__NR_MAX) {
+        st->init = false;
+        st->w.x = st->w.v = 0;
+        cui_color color = cui__color_set(o->color) ? cui_color_of(ui, o->color) : CUI_C(ui, FOREGROUND);
+        int n = cui__text_node(ui, text, -1, font, size, color, false);
+        ui->nodes[n].id = id;
+        ui->nodes[n].flags |= CUI_NF_TABULAR;
+        ui->nodes[n].line_height = 1.3f;
+        ui->last_id = id;
+        return;
+    }
     if (!st->init || strcmp(st->shown, text) != 0) {
-        /* prefix up to the first digit, suffix after the last one */
-        int len = (int)strlen(text), a = 0, b = len;
-        while (a < len && !(text[a] >= '0' && text[a] <= '9')) a++;
-        while (b > a && !(text[b - 1] >= '0' && text[b - 1] <= '9')) b--;
-        if (a > 0 && text[a - 1] == '-') a--;   /* a sign rolls with the figure */
         snprintf(st->prefix, sizeof st->prefix, "%.*s", a, text);
         snprintf(st->suffix, sizeof st->suffix, "%s", text + b);
         char body[96];
@@ -731,6 +743,7 @@ static void cui__paint_tab_bar(cui_ctx *ui, cui_node *n, void *data) {
     cui_draw_rect(ui, (cui_rect){ p->x, r.y + 6, p->w, r.h - 12 }, CUI_CORNERS((r.h - 12) * 0.5f), p->c);
 }
 
+/** Move one tab per arrow press, keeping the move tied to the original focus. */
 bool cui_tab_bar_ex(cui_ctx *ui, const char *id_str, const cui_tab_bar_item *items, int count, int *selected, const cui_tab_bar_opts *o) {
     cui_tab_bar_opts d;
     memset(&d, 0, sizeof d);
@@ -739,6 +752,8 @@ bool cui_tab_bar_ex(cui_ctx *ui, const char *id_str, const cui_tab_bar_item *ite
     cui__tb_state *st = cui_state(ui, id, sizeof *st);
     int sel = selected ? *selected : 0;
     bool changed = false;
+    cui_id move_from = 0, next_focus = 0;
+    int next_tab = -1;
     int n = cui__node_new(ui, id);
     cui_node *nd = &ui->nodes[n];
     nd->dir = CUI_ROW; nd->pad[0] = nd->pad[1] = nd->pad[2] = nd->pad[3] = 6; nd->gap = 4;
@@ -759,9 +774,15 @@ bool cui_tab_bar_ex(cui_ctx *ui, const char *id_str, const cui_tab_bar_item *ite
         cui_id iid = cui__hash(&k, sizeof k, id ^ 0x7AB);
         cui_interact r = cui__interact(ui, iid, CUI_IF_FOCUSABLE);
         if ((r.clicked || r.keyboard_activate) && sel != k) { sel = k; changed = true; }
-        if (r.focused) {
-            if (cui_key_pressed(ui, CUI_KEY_RIGHT) && k + 1 < count) { sel = k + 1; changed = true; ui->focus = cui__hash(&sel, sizeof sel, id ^ 0x7AB); }
-            if (cui_key_pressed(ui, CUI_KEY_LEFT) && k > 0) { sel = k - 1; changed = true; ui->focus = cui__hash(&sel, sizeof sel, id ^ 0x7AB); }
+        if (r.keyboard_focused) {
+            int to = k;
+            if (cui_key_pressed(ui, CUI_KEY_RIGHT) && k + 1 < count) to = k + 1;
+            if (cui_key_pressed(ui, CUI_KEY_LEFT) && k > 0) to = k - 1;
+            if (to != k) {
+                move_from = iid;
+                next_tab = to;
+                next_focus = cui__hash(&to, sizeof to, id ^ 0x7AB);
+            }
         }
         bool on = k == sel;
         float *hv = cui_state(ui, iid, sizeof(float) * 2);
@@ -809,6 +830,12 @@ bool cui_tab_bar_ex(cui_ctx *ui, const char *id_str, const cui_tab_bar_item *ite
                 p->x = st->x.x; p->w = st->w.x;
             }
         }
+    }
+    if (next_focus && ui->focus == move_from) {
+        ui->focus = next_focus;
+        sel = next_tab;
+        changed = true;
+        ui->animating = true;
     }
     cui_pop_id(ui);
     cui__close(ui);

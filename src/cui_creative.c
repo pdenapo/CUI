@@ -470,6 +470,7 @@ static const char *cui__gs_value_text(cui_ctx *ui, const cui_gradient_slider_opt
     }
 }
 
+/** Edit a gradient slider without snapping a passive model value or an endpoint. */
 int cui_gradient_slider_ex(cui_ctx *ui, const char *label, float *value, float min, float max, const cui_gradient_slider_opts *o) {
     cui_gradient_slider_opts d;
     memset(&d, 0, sizeof d);
@@ -485,11 +486,13 @@ int cui_gradient_slider_ex(cui_ctx *ui, const char *label, float *value, float m
 
     /* input, as the slider: the pointer sets the value, the keys step it */
     float old = *value, t = cui__clampf((*value - min) / (max - min), 0, 1);
+    float previous_t = t;
     if (!st->init) { st->thumb.x = t; st->init = true; }
     cui_rect pr = cui__prev_rect(ui, track_id);
     float x0 = pr.x + CUI__GS_PAD, x1 = pr.x + pr.w - CUI__GS_PAD;
     bool jumped = false;
-    if (r.active && ui->mdown[0] && x1 > x0) {
+    bool pointer = r.active && ui->mdown[0] && x1 > x0;
+    if (pointer) {
         float mt = cui__clampf((cui__mirror_x(pr, st->rtl, ui->mx) - x0) / (x1 - x0), 0, 1);
         if (ui->mpressed[0]) { st->dragging = true; jumped = fabsf(mt - t) > 0.02f; }
         t = mt;
@@ -497,10 +500,14 @@ int cui_gradient_slider_ex(cui_ctx *ui, const char *label, float *value, float m
         st->dragging = false;
     }
     if (r.keyboard_focused) t = cui__slider_keys(ui, t, o->step > 0 ? o->step / (max - min) : 0.01f, st->rtl);
-    float v = min + t * (max - min);
-    if (o->step > 0) v = min + roundf((v - min) / o->step) * o->step;
-    *value = v = cui__clampf(v, min, max);
-    t = (v - min) / (max - min);
+    float v = old;
+    if (pointer || t != previous_t || (r.keyboard_focused &&
+        (cui_key_pressed(ui, CUI_KEY_HOME) || cui_key_pressed(ui, CUI_KEY_END)))) {
+        v = min + t * (max - min);
+        if (o->step > 0 && t > 0 && t < 1) v = min + roundf((v - min) / o->step) * o->step;
+        *value = v = cui__clampf(v, min, max);
+        t = (v - min) / (max - min);
+    }
     if (jumped || !st->dragging) cui__spring(ui, &st->thumb, t, CUI_SPRING_SMOOTH);
     else { st->thumb.x = t; st->thumb.v = 0; }
     cui__tween(ui, &st->hover, (r.hovered || r.active) ? 1.0f : 0.0f, CUI__T_HOVER);

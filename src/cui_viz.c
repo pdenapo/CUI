@@ -935,6 +935,7 @@ typedef struct {
     int nn, nl;
     const char **names;
     cui_sankey_link *links;
+    int *link_indices;       /* input index of each retained link */
     cui_rect *node;          /* node rects */
     float *sy, *ty;          /* each link's band top at the source and the target */
     float k;                 /* points per unit */
@@ -957,16 +958,20 @@ static void cui__sk_label_widths(cui_ctx *ui, const cui__sk_geo *g, int i, const
     *value_w = cui__text_width(ui, CUI_FONT_BODY, fx, cui__sk_value_text(ui, g, i, fmt), -1, true);
 }
 
-static cui__sk_geo cui__sk_layout(cui_ctx *ui, cui_rect r, const char *const *names, int nn, const cui_sankey_link *links_in, int nl, float nw, const char *fmt) {
+/** Lay out the positive flows and retain their indexes in the input array. */
+static cui__sk_geo cui__sk_layout(cui_ctx *ui, cui_rect r, const char *const *names, int nn, const cui_sankey_link *links_in, int nl, float nw, const char *fmt, bool map_links) {
     cui__sk_geo g;
     memset(&g, 0, sizeof g);
     g.nn = nn; g.nl = nl;
     g.names = (const char **)names;
     g.links = cui__frame_alloc(ui, sizeof(cui_sankey_link) * (size_t)CUI_MAX(1, nl));
+    if (map_links) g.link_indices = cui__frame_alloc(ui, sizeof(int) * (size_t)CUI_MAX(1, nl));
     int m = 0;
     for (int l = 0; l < nl; l++)
-        if (links_in[l].from >= 0 && links_in[l].from < nn && links_in[l].to >= 0 && links_in[l].to < nn && links_in[l].from != links_in[l].to && links_in[l].value > 0)
+        if (links_in[l].from >= 0 && links_in[l].from < nn && links_in[l].to >= 0 && links_in[l].to < nn && links_in[l].from != links_in[l].to && links_in[l].value > 0) {
+            if (map_links) g.link_indices[m] = l;
             g.links[m++] = links_in[l];
+        }
     g.nl = nl = m;
     g.node = cui__frame_alloc(ui, sizeof(cui_rect) * (size_t)CUI_MAX(1, nn));
     g.sy = cui__frame_alloc(ui, sizeof(float) * (size_t)CUI_MAX(1, nl));
@@ -1091,7 +1096,7 @@ static void cui__paint_sankey(cui_ctx *ui, cui_node *n, void *data) {
     cui__sk_paint *p = data;
     cui_rect r = n->rect;
     float fs = cui__fs(ui, ui->theme.text_sm), fx = cui__fs(ui, ui->theme.text_xs);
-    cui__sk_geo g = cui__sk_layout(ui, r, p->g.names, p->g.nn, p->g.links, p->g.nl, p->nw, p->format);
+    cui__sk_geo g = cui__sk_layout(ui, r, p->g.names, p->g.nn, p->g.links, p->g.nl, p->nw, p->format, false);
     bool any = (p->hover_node >= 0 || p->hover_link >= 0) && p->t > 0.01f;
     bool *node_on = cui__frame_alloc(ui, sizeof(bool) * (size_t)CUI_MAX(1, g.nn));
     bool *link_on = any ? cui__sk_path(ui, &g, p->hover_node, p->hover_link, node_on) : NULL;
@@ -1147,6 +1152,7 @@ static void cui__paint_sankey(cui_ctx *ui, cui_node *n, void *data) {
     cui__tip_draw(ui, &p->tip);
 }
 
+/** Draw a Sankey and report a clicked node or an original link index. */
 int cui_sankey_ex(cui_ctx *ui, const char *id_str, const char *const *nodes, int nn, const cui_sankey_link *links, int nl, const cui_sankey_opts *o) {
     cui_sankey_opts d;
     memset(&d, 0, sizeof d);
@@ -1159,7 +1165,7 @@ int cui_sankey_ex(cui_ctx *ui, const char *id_str, const char *const *nodes, int
     float nw = o->node_width > 0 ? o->node_width : 6;
     float h = o->height > 0 ? o->height : 300;
     int hn = -1, hl = -1;
-    cui__sk_geo g = cui__sk_layout(ui, pr.w > 0 ? pr : (cui_rect){ 0, 0, 600, h }, nodes, nn, links ? links : (cui_sankey_link[1]){ { 0, 0, 0 } }, nl, nw, o->format);
+    cui__sk_geo g = cui__sk_layout(ui, pr.w > 0 ? pr : (cui_rect){ 0, 0, 600, h }, nodes, nn, links ? links : (cui_sankey_link[1]){ { 0, 0, 0 } }, nl, nw, o->format, r.clicked);
     if (r.hovered && pr.w > 0) {
         for (int i = 0; i < g.nn; i++) {
             cui_rect q = g.node[i];
@@ -1205,7 +1211,8 @@ int cui_sankey_ex(cui_ctx *ui, const char *id_str, const char *const *nodes, int
     } else p->tip.title = NULL;
     cui__viz_node(ui, id, o->width.kind ? o->width : CUI_FILL, CUI_PX(h), cui__paint_sankey, p, hover >= 0);
     if (hover >= 0) cui__set_cursor(ui, CUI_CURSOR_HAND);
-    return r.clicked ? hn : -1;
+    if (!r.clicked) return -1;
+    return hl >= 0 ? nn + g.link_indices[hl] : hn;
 }
 
 /* ------------------------------------------------------------------------ */
@@ -2140,6 +2147,7 @@ static void cui__paint_candles(cui_ctx *ui, cui_node *n, void *data) {
     cui__tip_draw(ui, &p->tip);
 }
 
+/** Build a candlestick chart with zoom and pan available while it is enabled. */
 int cui_candlestick_ex(cui_ctx *ui, const char *id_str, const cui_candle *candles, int count, const cui_candlestick_opts *o) {
     cui_candlestick_opts d;
     memset(&d, 0, sizeof d);
@@ -2170,7 +2178,7 @@ int cui_candlestick_ex(cui_ctx *ui, const char *id_str, const cui_candle *candle
     g = cui__cs_layout(rr, st->axis_w, st->span, volume);
     /* zoom around a point (0..1 across the plot) */
 #define CUI__CS_ZOOM(f, at) do { double m_ = st->first + (at) * st->span; st->span = CUI_CLAMP(st->span * (f), min_span, max_span); st->first = m_ - (at) * st->span; } while (0)
-    if (ui->scroll_target == wid && (ui->scroll_dy != 0 || ui->scroll_dx != 0) && pr.w > 0) {
+    if (!cui_is_disabled(ui) && ui->scroll_target == wid && (ui->scroll_dy != 0 || ui->scroll_dx != 0) && pr.w > 0) {
         float at = cui__clampf((ui->mx - g.plot.x) / g.plot.w, 0, 1);
         if (ui->scroll_dx != 0 || (ui->mods & CUI_MOD_SHIFT)) st->first -= (ui->scroll_dx != 0 ? ui->scroll_dx : ui->scroll_dy) * st->span * 0.06;
         else CUI__CS_ZOOM(pow(1.18, -ui->scroll_dy), at);

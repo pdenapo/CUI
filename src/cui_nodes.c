@@ -66,7 +66,7 @@ typedef struct cui__ne_build {
     cui_rect r;                           /* editor rect, last frame */
     float ox, oy;                         /* screen position of canvas (0, 0) */
     int editor_node;
-    bool grid, minimap, consumed, has_rect, bg_focus;
+    bool grid, minimap, consumed, has_rect, bg_focus, disabled;
     int inert, inert_content;             /* nested or misplaced begin calls */
     /* node being built */
     bool in_node;
@@ -203,12 +203,13 @@ static void cui__ne_draw_wire(cui_ctx *ui, cui_vec2 a, cui_vec2 d, float z, floa
 
 static float cui__ne_wire_thickness(float z) { return cui__clampf(1.75f * z, 1.1f, 3.0f); }
 
+/** Paint the canvas and expose its wheel hit target while interactive. */
 static void cui__paint_ne_canvas(cui_ctx *ui, cui_node *n, void *data) {
     cui__ne_build *b = data;
     cui__ne_state *st = b->st;
     cui_rect r = n->rect;
     /* the wheel goes to the editor while the pointer is over its visible part */
-    {
+    if (!b->disabled) {
         cui_rect clip = ui->dl.clip_stack[ui->dl.clip_depth - 1];
         float s = ui->scale;
         cui_rect cp = { clip.x / s, clip.y / s, clip.w / s, clip.h / s };
@@ -683,6 +684,7 @@ static void cui__ne_build_canvas(cui_ctx *ui, cui__ne_build *b, const cui_node_e
     cui__open(ui, en);
 }
 
+/** Build the editor canvas and process gestures while it is enabled. */
 bool cui_node_editor_begin_ex(cui_ctx *ui, const char *id_str, cui_node_view *view, const cui_node_editor_opts *o) {
     cui_node_editor_opts d;
     memset(&d, 0, sizeof d);
@@ -694,6 +696,7 @@ bool cui_node_editor_begin_ex(cui_ctx *ui, const char *id_str, cui_node_view *vi
     b->id = cui_make_id(ui, id_str ? id_str : "node-editor");
     b->frame = ui->frame;
     b->view = view;
+    b->disabled = cui_is_disabled(ui);
     b->min_zoom = o->min_zoom > 0 ? o->min_zoom : 0.25f;
     b->max_zoom = o->max_zoom > b->min_zoom ? o->max_zoom : CUI_MAX(2.0f, b->min_zoom);
     b->grid = !o->no_grid;
@@ -731,20 +734,25 @@ bool cui_node_editor_begin_ex(cui_ctx *ui, const char *id_str, cui_node_view *vi
     float mx = ui->mx, my = ui->my;
 
     /* input */
-    cui__ne_wheel(ui, b);
-    if (focus_mine && !ui->edit_prev) cui__ne_keys(ui, b, prev);
+    if (b->disabled) {
+        st->mode = NE_IDLE;
+        st->has_target = false;
+    } else {
+        cui__ne_wheel(ui, b);
+        if (focus_mine && !ui->edit_prev) cui__ne_keys(ui, b, prev);
+    }
     if (st->frame_all && b->has_rect) {
         st->frame_all = false;
         cui__ne_frame_all(b, prev);
     }
     /* pan: the middle button, or Space and drag, anywhere over the canvas */
     bool over = b->has_rect && cui__rect_contains(b->r, mx, my) && ui->hot_layer == ui->current_layer && (hot_mine || ui->hot != 0);
-    if (over && st->mode == NE_IDLE && !ui->edit_prev &&
+    if (!b->disabled && over && st->mode == NE_IDLE && !ui->edit_prev &&
         (ui->mpressed[CUI_MOUSE_MIDDLE] || (ui->mpressed[0] && ui->kdown[CUI_KEY_SPACE]))) {
         st->mode = NE_PAN; st->last_x = mx; st->last_y = my;
         b->consumed = true;
     }
-    cui__ne_gesture(ui, b, prev, mmid);
+    if (!b->disabled) cui__ne_gesture(ui, b, prev, mmid);
     if (mi.hovered && ui->mpressed[0] && !b->consumed && st->mode == NE_IDLE) {
         st->mode = NE_MINIMAP;
         b->consumed = true;
@@ -754,7 +762,7 @@ bool cui_node_editor_begin_ex(cui_ctx *ui, const char *id_str, cui_node_view *vi
     cui__spring(ui, &st->lift, st->mode == NE_DRAG ? 1.0f : 0.0f, CUI_SPRING_SNAPPY);
 
     /* build */
-    cui__ne_build_canvas(ui, b, o, bi.focus_visible, hot_mine);
+    cui__ne_build_canvas(ui, b, o, bi.focus_visible, hot_mine && !b->disabled);
     cui_push_id(ui, id_str ? id_str : "node-editor");
     b->prev = reg->cur;
     reg->cur = b;

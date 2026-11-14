@@ -371,17 +371,64 @@ typedef struct { const char *s; int n, i; cui__jnode *nodes; int count, cap; con
 static void cui__jws(cui__jparse *p) { while (p->i < p->n && (p->s[p->i] == ' ' || p->s[p->i] == '\t' || p->s[p->i] == '\n' || p->s[p->i] == '\r')) p->i++; }
 static bool cui__jfail(cui__jparse *p, const char *msg) { if (!p->err) { p->err = msg; p->err_at = p->i; } return false; }
 
+/** Consume a JSON escape, including the four digits of a Unicode escape. */
+static bool cui__jescape(cui__jparse *p) {
+    if (++p->i >= p->n) return cui__jfail(p, "incomplete string escape");
+    char escape = p->s[p->i];
+    if (escape != 'u' && !strchr("\"\\/bfnrt", escape)) return cui__jfail(p, "invalid string escape");
+    p->i++;
+    if (escape != 'u') return true;
+    for (int k = 0; k < 4; k++, p->i++) {
+        if (p->i >= p->n || !strchr("0123456789abcdefABCDEF", p->s[p->i]))
+            return cui__jfail(p, "expected four hexadecimal digits in Unicode escape");
+    }
+    return true;
+}
+
+/** Scan a JSON string and return its original byte range without the quotes. */
 static bool cui__jstring(cui__jparse *p, int *start, int *len) {
     if (p->i >= p->n || p->s[p->i] != '"') return cui__jfail(p, "expected a string");
     int st = ++p->i;
     while (p->i < p->n && p->s[p->i] != '"') {
-        if (p->s[p->i] == '\\') p->i++;
-        else if ((unsigned char)p->s[p->i] < 0x20) return cui__jfail(p, "control character in string");
-        p->i++;
+        if (p->s[p->i] == '\\') {
+            if (!cui__jescape(p)) return false;
+        } else {
+            if ((unsigned char)p->s[p->i] < 0x20) return cui__jfail(p, "control character in string");
+            p->i++;
+        }
     }
     if (p->i >= p->n) return cui__jfail(p, "unterminated string");
     *start = st; *len = p->i - st;
     p->i++;
+    return true;
+}
+
+/** JSON numbers use ASCII digits regardless of the current locale. */
+static bool cui__jdigit(const cui__jparse *p) {
+    return p->i < p->n && p->s[p->i] >= '0' && p->s[p->i] <= '9';
+}
+
+/** Validate the integer, optional fraction, and optional exponent in a JSON number. */
+static bool cui__jnumber(cui__jparse *p) {
+    if (p->s[p->i] == '-') p->i++;
+    if (!cui__jdigit(p)) return cui__jfail(p, "expected an integer digit");
+    if (p->s[p->i] == '0') {
+        p->i++;
+        if (cui__jdigit(p)) return cui__jfail(p, "leading zero in number");
+    } else {
+        do { p->i++; } while (cui__jdigit(p));
+    }
+    if (p->i < p->n && p->s[p->i] == '.') {
+        p->i++;
+        if (!cui__jdigit(p)) return cui__jfail(p, "expected a fractional digit");
+        do { p->i++; } while (cui__jdigit(p));
+    }
+    if (p->i < p->n && (p->s[p->i] == 'e' || p->s[p->i] == 'E')) {
+        p->i++;
+        if (p->i < p->n && (p->s[p->i] == '+' || p->s[p->i] == '-')) p->i++;
+        if (!cui__jdigit(p)) return cui__jfail(p, "expected an exponent digit");
+        do { p->i++; } while (cui__jdigit(p));
+    }
     return true;
 }
 
@@ -396,6 +443,7 @@ static int cui__jnew(cui__jparse *p, int parent, int depth, int key_start, int k
     return p->count++;
 }
 
+/** Parse one JSON value and attach its children and original token ranges. */
 static int cui__jvalue(cui__jparse *p, int parent, int depth, int key_start, int key_len) {
     if (depth > 64) { cui__jfail(p, "nested too deeply"); return -1; }
     cui__jws(p);
@@ -441,9 +489,7 @@ static int cui__jvalue(cui__jparse *p, int parent, int depth, int key_start, int
         return me;
     }
     if (c == '-' || (c >= '0' && c <= '9')) {
-        p->i++;
-        while (p->i < p->n && ((p->s[p->i] >= '0' && p->s[p->i] <= '9') || p->s[p->i] == '.' || p->s[p->i] == 'e' || p->s[p->i] == 'E' ||
-                               p->s[p->i] == '+' || p->s[p->i] == '-')) p->i++;
+        if (!cui__jnumber(p)) return -1;
         p->nodes[me].type = JV_NUM;
     } else if (!strncmp(p->s + p->i, "true", 4) || !strncmp(p->s + p->i, "null", 4)) {
         p->nodes[me].type = p->s[p->i] == 't' ? JV_BOOL : JV_NULL;

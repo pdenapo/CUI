@@ -167,10 +167,39 @@ static const cui_query_field qb_fields[] = {
     { "Status", CUI_QUERY_CHOICE, qb_status, 3 }, { "Assignee", CUI_QUERY_TEXT }, { "Priority", CUI_QUERY_NUMBER }, { "Has PR", CUI_QUERY_BOOL },
 };
 
-typedef struct { cui_query_node nodes[16]; int n; bool changed; cui_size w; } qb_ctx;
+typedef struct { cui_query_node nodes[16]; int n; bool changed, read_only, disabled; cui_size w; } qb_ctx;
+/** Build the same query in editable, read-only and disabled modes. */
 static void build_qb(cui_ctx *ui, void *u) {
     qb_ctx *c = u;
-    c->changed = cui_query_builder(ui, "filter", qb_fields, 4, c->nodes, &c->n, 16);
+    cui_push_disabled(ui, c->disabled);
+    c->changed = cui_query_builder(ui, "filter", qb_fields, 4, c->nodes, &c->n, 16, .read_only = c->read_only);
+    cui_pop_disabled(ui);
+}
+
+/** Rendering a read-only query does not initialize or normalize caller storage. */
+static void test_query_read_only(void) {
+    printf("query builder: read-only preserves caller rules\n");
+    cui_ctx *ui = new_ctx(800, 600);
+    qb_ctx empty = { .read_only = true };
+    run(ui, build_qb, &empty, 1);
+    CHECK(empty.n == 0 && !empty.nodes[0].group && !empty.changed);
+    qb_ctx rules = { .nodes = {{ .group = true }, { .depth = 1 }}, .n = 2, .read_only = true };
+    run(ui, build_qb, &rules, 1);
+    CHECK(rules.n == 2 && rules.nodes[1].value[0] == '\0' && !rules.changed);
+    empty.read_only = false;
+    run(ui, build_qb, &empty, 1);
+    CHECK(empty.n == 1 && empty.nodes[0].group && empty.changed);
+    /* disabled: the rules stay as given, and the layout is the editable one */
+    qb_ctx on = { .nodes = {{ .group = true }, { .depth = 1 }}, .n = 2 };
+    qb_ctx off = { .nodes = {{ .group = true }, { .depth = 1 }}, .n = 2, .disabled = true };
+    run(ui, build_qb, &on, 2);
+    cui_rect on_r = cui_get_rect(ui, cui_make_id(ui, "filter"));
+    run(ui, build_qb, &off, 2);
+    cui_rect off_r = cui_get_rect(ui, cui_make_id(ui, "filter"));
+    CHECK(off.n == 2 && off.nodes[1].value[0] == '\0' && !off.changed);
+    CHECK(on.nodes[1].value[0] != '\0');
+    CHECK(on_r.h > 0 && off_r.h == on_r.h);
+    cui_destroy(ui);
 }
 
 static void test_query(void) {
@@ -646,16 +675,25 @@ static void test_trace(void) {
     run(ui, build_tr, &c, 2);
     CHECK(fabs(c.view.end - c.view.start - 0.018) < 1e-9);
     /* Shift+drag measures */
+    double mark0 = c.view.mark_start, mark1 = c.view.mark_end;
     cui_input_mouse_move(ui, r.x + r.w * 0.4f, y); run(ui, build_tr, &c, 1);
     cui_input_key(ui, CUI_KEY_NONE, false, CUI_MOD_SHIFT);
     cui_input_mouse_button(ui, CUI_MOUSE_LEFT, true); run(ui, build_tr, &c, 1);
-    for (int k = 1; k <= 4; k++) { cui_input_mouse_move(ui, r.x + r.w * (0.4f + 0.05f * k), y); run(ui, build_tr, &c, 1); }
+    for (int k = 1; k <= 4; k++) {
+        cui_input_mouse_move(ui, r.x + r.w * (0.4f + 0.05f * k), y);
+        run(ui, build_tr, &c, 1);
+        CHECK(c.view.mark_start != mark0 || c.view.mark_end != mark1);
+        CHECK(c.r.view_changed);
+        mark0 = c.view.mark_start; mark1 = c.view.mark_end;
+    }
     cui_input_mouse_button(ui, CUI_MOUSE_LEFT, false); run(ui, build_tr, &c, 1);
+    CHECK(!c.r.view_changed);
     cui_input_key(ui, CUI_KEY_NONE, false, 0);
     CHECK(c.view.mark_end > c.view.mark_start);
     CHECK(fabs(c.view.end - c.view.start - 0.018) < 1e-9);   /* measuring does not pan */
     key(ui, build_tr, &c, CUI_KEY_ESCAPE, 0);
     CHECK(!(c.view.mark_end > c.view.mark_start));
+    CHECK(c.r.view_changed);
     /* a plain drag pans */
     cui_input_scroll(ui, 0, 4); run(ui, build_tr, &c, 1);
     double s0 = c.view.start;
@@ -840,6 +878,20 @@ static void test_regex(void) {
     CHECK(r == 0 || r == -2);
     CHECK((double)(clock() - c0) / CLOCKS_PER_SEC < 3.0);
     CHECK(cui_regex_search(NULL, 0, "a", -1, 0, &m, NULL) == 0);
+}
+
+/* a (?: ) group has no capture slot: matching it used to write cap[-1] */
+static void test_regex_noncapture(void) {
+    printf("regex: non-capturing groups match and leave the captures around them intact\n");
+    int a = 0, b = 0;
+    CHECK(rx("(?:a)b", 0, "ab", 0, &a, &b) == 1 && a == 0 && b == 2);
+    CHECK(rx("(?:ab)+c", 0, "xababc", 0, &a, &b) == 1 && a == 1 && b == 6);
+    CHECK(rx("(?:a|b|c)*d", 0, "abcabcd", 0, &a, &b) == 1 && a == 0 && b == 7);
+    CHECK(rx("(?:x)y", 0, "xz", 0, &a, &b) == 0);
+    cui_regex_match m;
+    CHECK(cui_regex_search("(a)(?:b)(c)", 0, "abc", -1, 0, &m, NULL) == 1);
+    CHECK(m.groups == 2 && m.group_start[1] == 0 && m.group_end[1] == 1 && m.group_start[2] == 2 && m.group_end[2] == 3);
+    CHECK(cui_regex_search("x(?:y)?(z)?", 0, "x", -1, 0, &m, NULL) == 1 && m.groups == 1 && m.group_start[1] == -1);
 }
 
 typedef struct { char pat[128]; char text[512]; int flags; cui_regex_tester_result r; } rt_ctx;
@@ -1053,11 +1105,38 @@ static void test_uptime(void) {
 }
 
 static float th_a[48], th_b[48];
-typedef struct { double s0, s1; cui_time_histogram_result r; } th_ctx;
+typedef struct { double s0, s1; cui_time_histogram_result r; bool disabled; } th_ctx;
+/** Build the histogram with the current enabled state. */
 static void build_th(cui_ctx *ui, void *u) {
     th_ctx *c = u;
     const cui_histogram_series se[] = { { "info", th_a, CUI_TONE_INFO }, { "error", th_b, CUI_TONE_DANGER } };
+    cui_push_disabled(ui, c->disabled);
     c->r = cui_time_histogram(ui, "hist", 1794240000, 600, 48, se, 2, &c->s0, &c->s1, .utc = true);
+    cui_pop_disabled(ui);
+}
+
+/** Disabling during a drag cancels it even if the widget becomes enabled again. */
+static void test_histogram_disable(void) {
+    printf("time histogram: disabling cancels a drag\n");
+    cui_ctx *ui = new_ctx(800, 400);
+    th_ctx c = {0};
+    run(ui, build_th, &c, 3);
+    cui_rect r = cui_get_rect(ui, cui_make_id(ui, "hist"));
+    move(ui, build_th, &c, r.x + r.w * 0.3f, r.y + 40);
+    cui_input_mouse_button(ui, CUI_MOUSE_LEFT, true);
+    run(ui, build_th, &c, 1);
+    move(ui, build_th, &c, r.x + r.w * 0.5f, r.y + 40);
+    CHECK(c.r.selection_changed && c.s1 > c.s0);
+    double lo = c.s0, hi = c.s1;
+    c.disabled = true;
+    move(ui, build_th, &c, r.x + r.w * 0.7f, r.y + 40);
+    CHECK(!c.r.selection_changed && c.s0 == lo && c.s1 == hi);
+    c.disabled = false;
+    move(ui, build_th, &c, r.x + r.w * 0.8f, r.y + 40);
+    CHECK(!c.r.selection_changed && c.s0 == lo && c.s1 == hi);
+    cui_input_mouse_button(ui, CUI_MOUSE_LEFT, false);
+    run(ui, build_th, &c, 1);
+    cui_destroy(ui);
 }
 static void test_histogram(void) {
     printf("time histogram: hover, drag selects whole buckets, click clears\n");
@@ -1079,6 +1158,25 @@ static void test_histogram(void) {
     CHECK(fmod(c.s0 - 1794240000, 600) == 0 && fmod(c.s1 - 1794240000, 600) == 0);
     CHECK(c.s0 >= 1794240000 + 600 * 11 && c.s1 <= 1794240000 + 600 * 25);
     click(ui, build_th, &c, px0 + pw * 0.8f, r.y + 40);
+    CHECK(c.s0 == 0 && c.s1 == 0);
+    cui_destroy(ui);
+}
+
+/* local time: a start far outside what struct tm holds made the zone offset read unset fields */
+typedef struct { double start, s0, s1; } th_far_ctx;
+static void build_th_far(cui_ctx *ui, void *u) {
+    th_far_ctx *c = u;
+    const cui_histogram_series se[] = { { "info", th_a, CUI_TONE_INFO } };
+    cui_time_histogram(ui, "far", c->start, 600, 48, se, 1, &c->s0, &c->s1);
+}
+static void test_histogram_far_time(void) {
+    printf("time histogram: local time at a start no calendar can show\n");
+    th_far_ctx c = { 1e17, 0, 0 };   /* about three billion years from now */
+    cui_ctx *ui = new_ctx(800, 400);
+    run(ui, build_th_far, &c, 2);
+    c.start = -1e17;
+    run(ui, build_th_far, &c, 2);
+    CHECK(cui_get_rect(ui, cui_make_id(ui, "far")).w > 300);
     CHECK(c.s0 == 0 && c.s1 == 0);
     cui_destroy(ui);
 }
@@ -1146,6 +1244,21 @@ static void test_blame(void) {
     double ms = (double)(clock() - c0) / CLOCKS_PER_SEC * 1000 / 30;
     printf("  100k lines: first frame %.1f ms, then %.2f ms a frame\n", first, ms);
     CHECK(ms < 20);
+    cui_destroy(ui);
+}
+
+/* line_commit may be NULL (a file with no blame data); every row after the first used to read it */
+static void test_blame_no_commits(void) {
+    printf("blame: no commit data for the lines\n");
+    bl_ctx c;
+    memset(&c, 0, sizeof c);
+    c.clicked = -1; c.lines = bl2_lines; c.lc = NULL; c.n = 5;
+    cui_ctx *ui = new_ctx(900, 500);
+    run(ui, build_bl, &c, 3);
+    cui_rect r = cui_get_rect(ui, cui_make_id(ui, "blame"));
+    CHECK(r.h > 100);
+    click(ui, build_bl, &c, r.x + 40, r.y + 40);
+    CHECK(c.r.hovered == -1 && c.clicked == -1);   /* no commit to report */
     cui_destroy(ui);
 }
 
@@ -1271,6 +1384,7 @@ int main(void) {
     test_cron();
     test_schedule();
     test_query();
+    test_query_read_only();
     test_kv();
     test_problems();
     test_pipeline();
@@ -1281,6 +1395,7 @@ int main(void) {
     test_trace();
     test_random();
     test_regex();
+    test_regex_noncapture();
     test_regex_tester();
     test_url();
     test_test_explorer();
@@ -1288,8 +1403,11 @@ int main(void) {
     test_request();
     test_uptime();
     test_histogram();
+    test_histogram_far_time();
+    test_histogram_disable();
     test_coverage();
     test_blame();
+    test_blame_no_commits();
     test_flags();
     test_api();
     test_random2();

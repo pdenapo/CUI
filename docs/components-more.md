@@ -694,9 +694,9 @@ if (cui_data_grid_begin(ui, "people", cols, 3, 2000, &first, &last, .height = CU
 }
 ```
 
-Only the rows in view are built, so the row count barely matters. Headers are sticky; drag a header edge to resize a column; click a sortable header to set `sort` (you reorder your data). With `selected`, a checkbox column appears and rows select like a spreadsheet: click, Shift+click for a range, Ctrl+click to toggle, Ctrl+A for all, arrows to move the cursor, Esc to clear. Editable cells start on double click or Enter and commit on Enter or clicking away.
+Only the rows in view are built, so the row count barely matters. When rows are removed, the scroll position and visible range are adjusted in the same frame. Headers are sticky; drag a header edge to resize a column; click a sortable header to set `sort` (you reorder your data). With `selected`, a checkbox column appears and rows select like a spreadsheet: click, Shift+click for a range, Ctrl+click to toggle, Ctrl+A for all, arrows to move the cursor, Esc to clear. Editable cells start on double click or Enter and commit on Enter or clicking away.
 
-The filter bar keeps one bit mask per field in `selected`; each active field shows as a chip that opens its value list, "Filter" adds one and "Clear all" resets them. `cui_tree_cell` draws a disclosure chevron and indentation inside any table or grid cell for tree tables.
+The filter bar keeps one bit mask per field in `selected`. Each active field shows as a chip. Choosing a field in "Filter" adds its chip and opens its value list. Click a chip to reopen the list, or "Clear all" to reset the filters. `cui_tree_cell` draws a disclosure chevron and indentation inside any table or grid cell for tree tables.
 
 ### Tree table and path bar
 
@@ -1196,6 +1196,8 @@ Conditions joined by all or any, in groups you can nest (three deep by default, 
 
 Keyboard: Tab moves through the controls of each rule. Left and Right switch between All and Any, Up and Down change a focused select, Space opens it, and the remove buttons take Enter or Space.
 
+A read-only or disabled query builder shows the rules without changing the caller's array or count. A disabled one keeps the editable layout.
+
 ### Schedule picker
 
 A cron schedule edited through plain choices instead of the expression, with the next runs listed.
@@ -1292,6 +1294,8 @@ cui_trace_view(ui, "trace", tracks, 3, spans, span_count, &view, &selected,
 ```
 
 Each thread, process or service has a lane of nested spans, drawn like the flame graph and sharing its colors and ruler. Markers (vsync, a GC pause, a deploy) run across every lane, with their names in a strip under the ruler. The wheel zooms around the pointer, Shift+wheel pans, and over the lane names the wheel scrolls the lanes. Dragging pans, a click selects, and a double click zooms to a span. Shift+drag measures a range, which `view.mark_start` and `mark_end` hold and the ruler labels with its length. A click on a lane's name folds it to its top row, and `collapsed` keeps that in your track array. With the viewer focused, Left and Right step along the row, Up goes to the parent and Down to the first child. + and - zoom, Enter zooms to the selection, F fits, and Esc clears the measurement and then the selection. Only the rows and spans in view are visited, and spans thinner than a point merge into runs, so 200,000 spans take under a millisecond a frame. Below 560 points the lane names get a narrower column.
+
+The trace result's `view_changed` flag also reports updates to the measurement, including when Esc clears it.
 
 ### Regex tester
 
@@ -1489,7 +1493,7 @@ cui_chat_message(ui, "It did. 2,000 rows scroll at 60 fps on my laptop.", .mine 
 cui_typing_indicator(ui, "Jonas");
 ```
 
-Grouped messages stack tightly with the avatar on the last bubble and tighter inner corners. Your own messages sit on the right in the primary color. The typing dots bounce in sequence. With `.markdown = true` a message renders its text with the markdown view, so an assistant's reply can carry lists, code and links.
+Grouped messages stack tightly with the avatar on the last bubble and tighter inner corners. Your own messages sit on the right in the primary color. The typing dots bounce in sequence and hold still with reduced motion. With `.markdown = true` a message renders its text with the markdown view, so an assistant's reply can carry lists, code and links.
 
 ### Comments
 
@@ -1629,7 +1633,7 @@ static cui_cal_event events[] = {
 int clicked = cui_week_calendar(ui, "week", monday, events, 2, .start_hour = 8, .end_hour = 18, .height = CUI_PX(460));
 ```
 
-Drag an event to move it (it snaps to 15 minutes and keeps its length) or pull its bottom edge to resize it; the calendar writes the new times into your array. Overlapping events share the day side by side. Today is circled and a line marks the current time. `read_only` turns editing off but keeps clicks. With the keyboard, Up and Down move a focused event by 15 minutes, Left and Right by a day, and Shift with Up or Down changes its end.
+Drag an event to move it (it snaps to 15 minutes and keeps its length) or pull its bottom edge to resize it; the calendar writes the new times into your array. Overlapping events share the day side by side. Today is circled and a line marks the current time. With `read_only`, a click or Enter or Space on a focused event still returns its index. The editing keys do not move or resize it. With the keyboard, Up and Down move a focused event by 15 minutes, Left and Right by a day, and Shift with Up or Down changes its end.
 
 ### Month calendar
 
@@ -1673,6 +1677,8 @@ int clicked = cui_gantt(ui, "plan", tasks, 4, start_date, 28, .today = 10);
 ```
 
 Drag a bar to reschedule it, or drag either end to change its length. Bars are colored by `state`: done in green, active in the first series color, planned in a neutral tint with a dashed edge. `CUI_GANTT_AUTO`, the default, works the state out: a progress of 1 is done, any progress is active, and untouched work is planned when it starts after `today` and active once that day has come. A task's `tone`, when set, replaces the state's color. The filled part of a bar is its progress, with the percentage at the bar's end when the name leaves room for it. Dependencies are soft curves with small arrowheads, running behind the bars; when a task starts before the one it waits for ends, the curve leaves from that bar's edge. A milestone is an outlined diamond labelled with its name and date. `today` draws an accent line over the rows with a small "Today" chip in the header, and weekends are lightly shaded. A focused bar moves a day with the arrow keys and changes its length with Shift and the arrows.
+
+In read-only mode, clicking a bar or pressing Enter or Space on the focused task returns its index. Moving and resizing are disabled.
 
 ### Node editor
 
@@ -1782,6 +1788,8 @@ cui_sankey(ui, "flow", nodes, 8, links, 8, .height = 300, .node_colors = colors)
 ```
 
 Columns follow the links from the sources, and an outcome sits at the step it is reached from, so a drop off stays beside the step it left and no ribbon crosses a column of nodes. Nodes are slim rounded bars (`node_width`, 6 points by default) colored by meaning: give `node_colors` one color per node, and any node left unset (or every node, without `node_colors`) falls back to the palette for outcomes, the largest first, and neutral gray for sources and steps. Each ribbon fades from its source's color to its target's at a low opacity. Labels sit beside the nodes: the name, then the value and, past the sources, its share of everything that leaves them ("860 · 62%"); a label that runs into the next column is cut with an ellipsis. Hover a node or a ribbon to light its whole path, everything upstream of it and everything downstream, and to see its values in a tooltip. A cycle in the links does not hang the layout.
+
+On a click, `cui_sankey` returns the node index or the node count plus the ribbon's index in the original links array. It returns -1 without an activation.
 
 ### Bar list and activity rings
 
@@ -2019,7 +2027,7 @@ int step = cui_agent_plan(ui, "plan", steps, 3, .title = "Research plan");
 cui_agent_status(ui, "Reading quarterly-report.pdf", .status = CUI_TASK_RUNNING, .seconds = elapsed);
 ```
 
-The rail fills up to the step in progress, the running step shimmers, and the header counts finished steps with a progress bar. The status pill shows loader dots while running and a check or a cross when done.
+The rail fills up to the step in progress, the running step shimmers, and the header counts finished steps with a progress bar. With reduced motion, the running glyph holds still in both the plan and the tool call. The status pill shows loader dots while running and a check or a cross when done.
 
 `cui_agent_plan` returns the index of the step that was clicked this frame, or -1. `steps` is your array and is only read: you change each `status` as the agent moves on. A step is a title, a detail line that may be `NULL`, and one of `CUI_TASK_PENDING`, `CUI_TASK_RUNNING`, `CUI_TASK_DONE`, `CUI_TASK_FAILED` or `CUI_TASK_SKIPPED`. Pending is the zero value. The header counts done and skipped steps as finished, and shows `title`, or "Plan".
 
@@ -2274,7 +2282,7 @@ The result reports the sample under the pointer or the keyboard cursor (`hovered
 
 In a right-to-left interface the chart keeps time running left to right, like the other time-based components, and Right still moves later. Its labels and readout are drawn with the library's text, so Persian and Arabic labels are shaped when CUI is built with `CUI_TEXT_SHAPING` and a font that covers them is loaded ([Text in other languages](integration.md#text-in-other-languages)).
 
-Keyboard: Tab focuses the chart, Left and Right move the readout a sample (Shift: ten), Home and End jump to the first and last sample, Enter clicks at the cursor, and Esc hides the readout.
+Keyboard: Tab focuses the chart, Left and Right move the readout a sample (Shift: ten), Home and End jump to the first and last sample, Enter clicks at the cursor, and Esc hides the readout. When neither the pointer nor the keys have picked a sample, Enter or Space puts the cursor on the middle sample and clicks there.
 
 ### Chart annotations
 

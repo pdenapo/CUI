@@ -161,16 +161,19 @@ static void cui__paint_status(cui_ctx *ui, cui_node *n, void *data) {
     }
 }
 
+/** Draw a task glyph, with a still arc for running tasks under reduced motion. */
 static void cui__status_node(cui_ctx *ui, cui_task_status s, float size) {
     int n = cui__leaf(ui, 0, CUI_PX(size), CUI_PX(size));
     cui__st_paint *p = cui__frame_alloc(ui, sizeof *p);
-    p->s = s; p->t = (float)fmod(ui->time, 1000.0);
+    bool animate = s == CUI_TASK_RUNNING && ui->theme.motion > 0;
+    p->s = s;
+    p->t = animate ? (float)fmod(ui->time, 1000.0) : 0;
     p->c = s == CUI_TASK_DONE ? (ui->accent == CUI_ACCENT_NEUTRAL ? CUI_C(ui, SUCCESS) : CUI_C(ui, ACCENT)) : cui__ai_accent(ui);
     p->ring = CUI_C(ui, BORDER_STRONG);
     ui->nodes[n].paint = cui__paint_status;
     ui->nodes[n].paint_data = p;
     ui->nodes[n].self_align = CUI_ALIGN_CENTER;
-    if (s == CUI_TASK_RUNNING) ui->animating = true;
+    if (animate) ui->animating = true;
 }
 
 /* ------------------------------------------------------------------------ */

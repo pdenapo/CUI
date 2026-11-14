@@ -176,6 +176,38 @@ static void build_gs(cui_ctx *ui, void *u) {
                         .color_out = &c->alpha_color);
 }
 
+typedef struct { float value; bool disabled; int flags; } stepped_gradient_case;
+
+/** Exercise a gradient slider whose step does not divide its range evenly. */
+static void build_stepped_gradient(cui_ctx *ui, void *user) {
+    stepped_gradient_case *c = user;
+    c->flags = cui_gradient_slider(ui, "Gradient", &c->value, 0, 1, .step = 0.3f, .disabled = c->disabled);
+}
+
+/** Endpoint keys and idle or disabled frames preserve the model's exact value. */
+static void test_stepped_gradient(void) {
+    printf("gradient slider: exact endpoints and passive values\n");
+    stepped_gradient_case c = { .value = 0.85f, .disabled = true };
+    cui_ctx *ui = new_ctx(CUI_DIRECTION_LTR);
+    run(ui, build_stepped_gradient, &c, 3);
+    CHECK_NEAR(c.value, 0.85, 1e-6);
+    CHECK_EQ(c.flags, 0);
+    c.disabled = false;
+    run(ui, build_stepped_gradient, &c, 1);
+    CHECK_NEAR(c.value, 0.85, 1e-6);
+    key(ui, build_stepped_gradient, &c, CUI_KEY_TAB, 0);
+    key(ui, build_stepped_gradient, &c, CUI_KEY_END, 0);
+    CHECK_NEAR(c.value, 1, 1e-6);
+    run(ui, build_stepped_gradient, &c, 1);
+    CHECK_NEAR(c.value, 1, 1e-6);
+    CHECK_EQ(c.flags, 0);
+    key(ui, build_stepped_gradient, &c, CUI_KEY_LEFT, 0);
+    CHECK_NEAR(c.value, 0.6, 1e-6);
+    key(ui, build_stepped_gradient, &c, CUI_KEY_HOME, 0);
+    CHECK_NEAR(c.value, 0, 1e-6);
+    cui_destroy(ui);
+}
+
 static void test_gradient_slider(void) {
     printf("gradient slider\n");
     gs_ctx c = { 0, 0.5f, 0, 0, { 0 }, { 0 } };
@@ -473,6 +505,7 @@ int main(void) {
     test_status_tag();
     test_ratio_slider();
     test_gradient_slider();
+    test_stepped_gradient();
     test_step_slider();
     test_palette_strip();
     test_aspect_picker();

@@ -408,6 +408,45 @@ static void build_veil(cui_ctx *ui, void *u) {
     c->veil = cui_last_id(ui);
 }
 
+typedef struct { bool disabled, shown; int clicks; cui_rect canvas; } veil_overlap_case;
+
+/** Overlay a covered veil on an independently clickable canvas. */
+static void build_veil_overlap(cui_ctx *ui, void *user) {
+    veil_overlap_case *v = user;
+    cui_box(ui, .dir = CUI_STACK, .width = CUI_PX(200), .height = CUI_PX(100)) {
+        cui_canvas_result canvas = cui_canvas(ui, "behind", CUI_PX(200), CUI_PX(100), NULL, NULL, 0);
+        v->canvas = canvas.rect;
+        if (canvas.clicked) v->clicks++;
+        cui_push_disabled(ui, v->disabled);
+        cui_veil(ui, "cover", &v->shown, .width = CUI_PX(200), .label = "Covered") {
+            cui_box(ui, .width = CUI_PX(200), .height = CUI_PX(100)) {}
+        }
+        cui_pop_disabled(ui);
+    }
+}
+
+/** The disabled cover stays painted but does not catch the canvas click. */
+static void test_disabled_veil_overlap(void) {
+    printf("veil: disabled cover leaves clicks available to the canvas\n");
+    cui_ctx *ui = new_ctx(400, 300, true);
+    veil_overlap_case v = { .disabled = true };
+    run(ui, build_veil_overlap, &v, 3);
+    float x = v.canvas.x + v.canvas.w / 2, y = v.canvas.y + v.canvas.h / 2;
+    image disabled = render(ui);
+    click(ui, build_veil_overlap, &v, x, y);
+    CHECK(v.clicks == 1 && !v.shown);
+    v.disabled = false;
+    run(ui, build_veil_overlap, &v, 2);
+    image enabled = render(ui);
+    CHECK(same(disabled, enabled));
+    free(disabled.px);
+    free(enabled.px);
+    int prior_clicks = v.clicks;
+    click(ui, build_veil_overlap, &v, x, y);
+    CHECK(v.clicks == prior_clicks && v.shown);
+    cui_destroy(ui);
+}
+
 static void test_veil(void) {
     printf("veil\n");
     cui_ctx *ui = new_ctx(400, 300, true);
@@ -794,6 +833,7 @@ int main(void) {
     test_meter();
     test_area();
     test_veil();
+    test_disabled_veil_overlap();
     test_spinners();
     test_status_spinner();
     test_skeleton_group();

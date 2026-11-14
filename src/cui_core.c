@@ -344,6 +344,7 @@ cui_state_entry *cui__state_entry(cui_ctx *ui, cui_id id) {
     } else {
         CUI__GROW(ui, ui->states, ui->state_count, ui->state_cap, 1);
         idx = ui->state_count++;
+        memset(&ui->states[idx], 0, sizeof ui->states[idx]);   /* the rehash below reads every slot up to the count */
         if (ui->state_count > ui->bucket_count) cui__state_rehash(ui, ui->bucket_count * 2);
     }
     e = &ui->states[idx];
@@ -594,7 +595,22 @@ void cui__set_cursor(cui_ctx *ui, cui_cursor c) { ui->cursor = c; }
 /* Interaction                                                              */
 /* ------------------------------------------------------------------------ */
 
-/** Choose the deepest compatible wheel target before building any widgets. */
+/** Consume the vertical input routed to a control independently of the horizontal axis. */
+float cui__take_vertical_wheel(cui_ctx *ui, cui_id id) {
+    if (ui->scroll_target == id) {
+        float delta = ui->scroll_dy;
+        ui->scroll_dy = 0;
+        return delta;
+    }
+    cui__vertical_wheel *vertical = cui__state_lazy(ui, id ^ CUI__VERTICAL_WHEEL_STATE, sizeof *vertical, false);
+    if (!vertical || vertical->frame != ui->frame) return 0;
+    float delta = vertical->delta;
+    vertical->delta = 0;
+    return delta;
+}
+
+/** Resolve pointer hits against the previous layout, and choose the deepest compatible wheel target
+ * before any widget is built. */
 static void cui__compute_hot(cui_ctx *ui) {
     ui->hot = 0; ui->hot_layer = 0; ui->scroll_target = 0;
     if (!ui->mouse_inside) return;

@@ -1279,16 +1279,25 @@ static void cui__qb_apply(cui__qbf *f) {
     f->changed = true;
 }
 
+/** Draw a query. Read-only and disabled builders work on a private copy, so the caller's rules
+ * stay as given; a disabled builder keeps the editable layout, only dimmed. */
 bool cui_query_builder_ex(cui_ctx *ui, const char *id_str, const cui_query_field *fields, int field_count,
                           cui_query_node *nodes, int *count, int capacity, const cui_query_opts *o) {
     cui_query_opts d;
     memset(&d, 0, sizeof d);
     if (!o) o = &d;
     if (!nodes || !count || capacity <= 0) return false;
+    bool keep = o->read_only || cui_is_disabled(ui);
+    int n = CUI_CLAMP(*count, 0, capacity);
+    if (keep) {
+        cui_query_node *copy = cui__frame_alloc(ui, sizeof *copy * (size_t)CUI_MAX(1, n));
+        if (n > 0) memcpy(copy, nodes, sizeof *copy * (size_t)n);
+        nodes = copy;
+    }
     cui__qbf f;
     memset(&f, 0, sizeof f);
     f.ui = ui; f.o = o; f.fields = fields; f.field_count = fields ? field_count : 0;
-    f.nodes = nodes; f.count = CUI_CLAMP(*count, 0, capacity); f.capacity = capacity;
+    f.nodes = nodes; f.count = n; f.capacity = capacity;
     f.edit.at = -1;
     if (f.count == 0) { memset(&nodes[0], 0, sizeof nodes[0]); nodes[0].group = true; f.count = 1; f.changed = true; }
     nodes[0].depth = 0; nodes[0].group = true;
@@ -1302,10 +1311,10 @@ bool cui_query_builder_ex(cui_ctx *ui, const char *id_str, const cui_query_field
     cui__qb_group(&f, 0);
     cui__close(ui);
     cui_pop_id(ui);
-    if (f.edit.at >= 0) cui__qb_apply(&f);
-    *count = f.count;
+    if (f.edit.at >= 0 && !keep) cui__qb_apply(&f);   /* the copy holds only the given rules */
+    if (!keep) *count = f.count;
     ui->last_id = id;
-    return f.changed;
+    return !keep && f.changed;
 }
 
 /* ======================================================================== */

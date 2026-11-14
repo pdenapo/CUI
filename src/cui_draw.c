@@ -423,15 +423,17 @@ void cui__draw_check(cui_ctx *ui, cui_rect r, float t, float thick, cui_color c)
     cui_draw_polyline(ui, pts, n, thick, c, false);
 }
 
+/** Paint the arc spinner and request frames only while it is moving. */
 void cui__draw_spinner(cui_ctx *ui, cui_vec2 c, float radius, float thick, cui_color col) {
-    float t = (float)ui->time;
+    bool motion = ui->theme.motion > 0;
+    float t = motion ? (float)ui->time : 0;
     col = cui_color_of(ui, col);
     cui_color track = cui_alpha(col, 0.18f);
     cui_draw_arc(ui, c, radius, 0, 2 * CUI_PI, thick, track);
     float head = t * 5.2f;
     float len = 1.2f + 0.9f * sinf(t * 2.4f);
     cui_draw_arc(ui, c, radius, head, head + len, thick, col);
-    ui->animating = true;
+    if (motion) ui->animating = true;
 }
 
 void cui__draw_focus_ring(cui_ctx *ui, cui_rect r, cui_corners rad, float alpha) {

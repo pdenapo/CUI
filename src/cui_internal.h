@@ -421,6 +421,7 @@ typedef char cui__hit_flags_above_node_flags[(unsigned)CUI_HIT_WHEEL_UP > (unsig
 /* A vertical delta reserved for one hit while the normal route handles X. */
 enum { CUI__VERTICAL_WHEEL_STATE = 0x57484559u };
 typedef struct { uint64_t frame; float delta; } cui__vertical_wheel;
+float cui__take_vertical_wheel(cui_ctx *ui, cui_id id);
 
 typedef struct cui_interact {
     bool hovered, pressed, clicked, right_clicked, double_clicked, focused, active, released, keyboard_activate;

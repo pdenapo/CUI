@@ -378,6 +378,7 @@ static void cui__paint_event_bar(cui_ctx *ui, cui_node *n, void *data) {
 static int cui__week_calendar_ex_body(cui_ctx *ui, const char *id_str, cui_date week_start, cui_cal_event *ev, int count, const cui_week_opts *o);
 
 /* left to right in any interface: see cui__keep_ltr */
+/** Draw a week calendar whose events remain activatable in read-only mode. */
 int cui_week_calendar_ex(cui_ctx *ui, const char *id_str, cui_date week_start, cui_cal_event *ev, int count, const cui_week_opts *o) {
     int first = ui->node_count;
     int r = cui__week_calendar_ex_body(ui, id_str, week_start, ev, count, o);
@@ -411,11 +412,11 @@ static int cui__week_calendar_ex_body(cui_ctx *ui, const char *id_str, cui_date 
 #endif
     float now = lt.tm_hour + lt.tm_min / 60.0f;
     /* drag in progress */
-    if (st->drag > 0 && st->drag <= count && !o->read_only) {
+    if (st->drag > 0 && st->drag <= count) {
         cui_cal_event *e = &ev[st->drag - 1];
         if (ui->mdown[0]) {
             if (fabsf(ui->mx - st->press_x) + fabsf(ui->my - st->press_y) > 4) st->moved = true;
-            if (st->moved && gr.w > 0) {
+            if (st->moved && gr.w > 0 && !o->read_only) {
                 float gy = ui->my - gr.y;
                 if (st->mode == 1) {
                     float dur = e->end - e->start;
@@ -430,7 +431,7 @@ static int cui__week_calendar_ex_body(cui_ctx *ui, const char *id_str, cui_date 
                 }
             }
             ui->active = id;
-            cui__set_cursor(ui, st->mode == 2 ? CUI_CURSOR_RESIZE_NS : CUI_CURSOR_MOVE);
+            if (!o->read_only) cui__set_cursor(ui, st->mode == 2 ? CUI_CURSOR_RESIZE_NS : CUI_CURSOR_MOVE);
         } else {
             if (!st->moved) clicked = st->drag - 1;
             st->drag = 0;
@@ -532,6 +533,7 @@ static int cui__week_calendar_ex_body(cui_ctx *ui, const char *id_str, cui_date 
         if (e->day < 0 || e->day > 6 || e->end <= h0 || e->start >= h1) continue;
         cui_id eid = cui__hash(&k, sizeof k, id ^ 0xE7u);
         cui_interact r = cui__interact(ui, eid, CUI_IF_DRAG | CUI_IF_FOCUSABLE);
+        if (r.keyboard_activate) clicked = k;
         if (r.focus_visible && !o->read_only) {
             /* Up and Down move the event 15 minutes, Left and Right a day; Shift changes its end */
             float dur = e->end - e->start;
@@ -543,7 +545,6 @@ static int cui__week_calendar_ex_body(cui_ctx *ui, const char *id_str, cui_date 
                 ui->kpressed[CUI_KEY_DOWN] = ui->kpressed[CUI_KEY_UP] = 0;
             }
             if (dday) { e->day = CUI_CLAMP(e->day + dday, 0, 6); ui->kpressed[CUI_KEY_RIGHT] = ui->kpressed[CUI_KEY_LEFT] = 0; }
-            if (r.keyboard_activate) clicked = k;
         }
         cui_rect er = cui__prev_rect(ui, eid);
         if (r.hovered && ui->mpressed[0] && st->drag == 0) {
@@ -766,6 +767,7 @@ static void cui__paint_gantt_bar(cui_ctx *ui, cui_node *n, void *data) {
 static int cui__gantt_ex_body(cui_ctx *ui, const char *id_str, cui_gantt_task *tasks, int count, cui_date origin, int days, const cui_gantt_opts *o);
 
 /* left to right in any interface: see cui__keep_ltr */
+/** Draw the Gantt schedule and report task activation even in read-only mode. */
 int cui_gantt_ex(cui_ctx *ui, const char *id_str, cui_gantt_task *tasks, int count, cui_date origin, int days, const cui_gantt_opts *o) {
     int first = ui->node_count;
     int r = cui__gantt_ex_body(ui, id_str, tasks, count, origin, days, o);
@@ -932,6 +934,7 @@ static int cui__gantt_ex_body(cui_ctx *ui, const char *id_str, cui_gantt_task *t
         cui_gantt_task *t = &tasks[k];
         cui_id tid = cui__hash(&k, sizeof k, id ^ 0x6A7u);
         cui_interact r = cui__interact(ui, tid, CUI_IF_DRAG | CUI_IF_FOCUSABLE);
+        if (r.keyboard_activate) clicked = k;
         if (r.focus_visible && !o->read_only) {
             /* arrows move the task a day; with Shift they change its length */
             int dd = cui_key_pressed(ui, CUI_KEY_RIGHT) ? 1 : cui_key_pressed(ui, CUI_KEY_LEFT) ? -1 : 0;
@@ -941,7 +944,6 @@ static int cui__gantt_ex_body(cui_ctx *ui, const char *id_str, cui_gantt_task *t
                 else { t->start = CUI_CLAMP(t->start + dd, 0, days - len); t->end = t->start + len; }
                 ui->kpressed[CUI_KEY_RIGHT] = ui->kpressed[CUI_KEY_LEFT] = 0;
             }
-            if (r.keyboard_activate) clicked = k;
         }
         cui_rect tr = cui__prev_rect(ui, tid);
         bool near_l = r.hovered && ui->mx < tr.x + 7 && !t->milestone, near_r = r.hovered && ui->mx > tr.x + tr.w - 7 && !t->milestone;

@@ -245,6 +245,7 @@ static double cui__th_nice(double raw) {
     return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p;
 }
 
+/** Draw a time histogram and cancel a pending selection when it becomes disabled. */
 cui_time_histogram_result cui_time_histogram_ex(cui_ctx *ui, const char *id_str, double start, double bucket, int buckets,
                                                 const cui_histogram_series *series, int series_count, double *sel_start, double *sel_end,
                                                 const cui_time_histogram_opts *o) {
@@ -264,10 +265,12 @@ cui_time_histogram_result cui_time_histogram_ex(cui_ctx *ui, const char *id_str,
     cui_rect plot = { R.x + CUI__TH_AXIS_W, R.y + 6, CUI_MAX(1.0f, R.w - CUI__TH_AXIS_W - 4), CUI_MAX(1.0f, R.h - CUI__TH_AXIS_H - 6) };
     double t0 = start, t1 = start + bucket * buckets;
     cui_interact bi = cui__interact(ui, id, CUI_IF_DRAG);
+    bool disabled = cui_is_disabled(ui);
+    if (disabled) st->mode = 0;
     double b0 = *sel_start, b1 = *sel_end;
     double tm = known && buckets > 0 ? t0 + CUI_CLAMP((ui->mx - plot.x) / plot.w, 0.0f, 1.0f) * (t1 - t0) : t0;
     /* drag selects a range of whole buckets; a click clears it */
-    if (known && buckets > 0) {
+    if (!disabled && known && buckets > 0) {
         if (bi.hovered && ui->mpressed[0] && ui->mx >= plot.x - 2) { st->mode = 1; st->press_x = ui->mx; st->press_t = tm; }
         if (st->mode == 1 && ui->mdown[0] && fabsf(ui->mx - st->press_x) > 3) st->mode = 2;
         if (st->mode == 2) {
@@ -782,7 +785,7 @@ cui_blame_result cui_blame_ex(cui_ctx *ui, const char *id_str, const char *const
         int c = line_commit ? line_commit[i] : -1;
         if (c < 0 || c >= commit_count) c = -1;
         int pc = i > 0 && line_commit ? line_commit[i - 1] : -2;
-        bool run_start = i == 0 || pc != line_commit[i];
+        bool run_start = i == 0 || pc != (line_commit ? line_commit[i] : -1);
         cui_id rid = cui__hash(&i, sizeof i, id ^ 0xB1A4u);
         cui_id gid = rid ^ 0x6u;
         cui_interact gi = cui__interact(ui, gid, 0);

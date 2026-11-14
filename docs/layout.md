@@ -238,7 +238,9 @@ cui_scroll(ui, .id = "messages", .gap = 8) {
 }
 ```
 
-A scroll area fills the remaining height of its parent by default, scrolls smoothly with the wheel or trackpad, and shows a thin scrollbar while scrolling or when hovered near the edge. The thumb can be dragged. Set `.horizontal = true` to scroll both ways. Jump with `cui_scroll_to(ui, "messages", 0)`.
+A scroll area fills the remaining height of its parent by default, scrolls smoothly with the wheel or trackpad, and shows a thin scrollbar while scrolling or when hovered near the edge. The thumb can be dragged. Set `.horizontal = true` to scroll both ways. A vertical-only area leaves horizontal wheel input available to its children. Jump with `cui_scroll_to(ui, "messages", 0)`.
+
+Over a wheel picker or ruler, vertical wheel input changes its value while it has room to move in that direction. At its limit the surrounding scroll area can receive the wheel.
 
 With `.fade_edges = true` the content fades out at an edge that has more to scroll, instead of being cut off. It works sideways too for `.horizontal` areas. The fade takes the color of the nearest opaque box around the scroll area (the page background if there is none); set `.fade_color` to override it. Source cards and the kanban board fade their overflow the same way.
 
@@ -262,7 +264,7 @@ cui_split(ui, "main", &ratio, .min_first = 220, .min_second = 360) {
 }
 ```
 
-The divider highlights on hover and can be dragged. Use `.vertical = true` to split top and bottom.
+The divider highlights on hover and can be dragged. Use `.vertical = true` to split top and bottom. When the pane minimums cannot both fit, they share the space in proportion to their requested sizes.
 
 ## Reading layout results
 

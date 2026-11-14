@@ -57,6 +57,42 @@ What changed in CUI, newest first. Every component mentioned here runs live in t
 
 ### Fixed
 
+- Disabled flame graphs and timeline editors ignore wheel, pointer and keyboard gestures ([#85](https://github.com/yappologistic/CUI/issues/85)).
+- Disabled node editors ignore wheel zoom and cancel in-progress gestures ([#85](https://github.com/yappologistic/CUI/issues/85)).
+- A disabled veil keeps its cover visible and leaves clicks available to the widgets behind it ([#85](https://github.com/yappologistic/CUI/issues/85)).
+- A candlestick chart ignores queued wheel events after it is disabled ([#85](https://github.com/yappologistic/CUI/issues/85)).
+- Disabling a time histogram cancels its active selection drag ([#85](https://github.com/yappologistic/CUI/issues/85)).
+- Read-only and disabled query builders leave the supplied rules unchanged ([#75](https://github.com/yappologistic/CUI/issues/75)).
+- Read-only week calendar events and Gantt tasks can be activated without editing them ([#75](https://github.com/yappologistic/CUI/issues/75)).
+- The trace viewer reports view changes when a measurement is drawn or cleared ([#71](https://github.com/yappologistic/CUI/issues/71)).
+- Activating a dot chart from the keyboard before moving its cursor reports the middle sample ([#71](https://github.com/yappologistic/CUI/issues/71)).
+- Clicking a Sankey ribbon reports which input link was clicked ([#71](https://github.com/yappologistic/CUI/issues/71)).
+- Virtual lists show the remaining rows immediately when the list shrinks while scrolled ([#67](https://github.com/yappologistic/CUI/issues/67)).
+- Data grids keep the remaining rows visible when the row count shrinks while scrolled ([#67](https://github.com/yappologistic/CUI/issues/67)).
+- Sortable table headers and selectable rows show a keyboard focus ring ([#67](https://github.com/yappologistic/CUI/issues/67)).
+- Adding a filter opens the new chip's value list ([#67](https://github.com/yappologistic/CUI/issues/67)).
+- Chat typing dots stay still and stop requesting frames with reduced motion ([#65](https://github.com/yappologistic/CUI/issues/65)).
+- Running task glyphs in agent plans and tool calls stay still with reduced motion ([#65](https://github.com/yappologistic/CUI/issues/65)).
+- Plain spinner arcs, including running jobs and tests, stay still with reduced motion ([#65](https://github.com/yappologistic/CUI/issues/65)).
+- Split panes share the available space when their minimum sizes do not fit ([#73](https://github.com/yappologistic/CUI/issues/73)).
+- A vertical scroll view preserves horizontal wheel input for swipe actions inside it ([#73](https://github.com/yappologistic/CUI/issues/73)).
+- A wheel picker or ruler can use the vertical wheel inside a scrolling page ([#73](https://github.com/yappologistic/CUI/issues/73)).
+- Disabled dropzones and avatar upload targets leave dropped files available to the application ([#77](https://github.com/yappologistic/CUI/issues/77)).
+- Image loading accepts UTF-8 file paths on Windows ([#77](https://github.com/yappologistic/CUI/issues/77)).
+- The JSON viewer reports malformed number literals and string escapes as invalid JSON ([#68](https://github.com/yappologistic/CUI/issues/68)).
+- Scrub inputs discard invalid numeric drafts and keep the last valid value ([#79](https://github.com/yappologistic/CUI/issues/79)).
+- Money inputs reject drafts whose complete grouped amount would not fit the field ([#79](https://github.com/yappologistic/CUI/issues/79)).
+- Rolling numbers draw the complete label when its digits or affixes do not fit the animation ([#79](https://github.com/yappologistic/CUI/issues/79)).
+- Expandable text keeps keyboard focus when its toggle changes label ([#81](https://github.com/yappologistic/CUI/issues/81)).
+- A dismissed hover card stays closed until the pointer leaves its anchor ([#81](https://github.com/yappologistic/CUI/issues/81)).
+- A closing command palette leaves keyboard input available and cannot activate a command ([#81](https://github.com/yappologistic/CUI/issues/81)).
+- An arrow press moves the tab bar by one tab ([#81](https://github.com/yappologistic/CUI/issues/81)).
+- Choosing a speed dial action preserves the caller's disabled scope ([#81](https://github.com/yappologistic/CUI/issues/81)).
+- Gradient sliders reach both endpoints and leave idle and disabled values untouched ([#83](https://github.com/yappologistic/CUI/issues/83)).
+- Ruler wheel steps stay in range when the maximum is between tick marks ([#83](https://github.com/yappologistic/CUI/issues/83)).
+- Date and color pickers show keyboard focus on their triggers ([#83](https://github.com/yappologistic/CUI/issues/83)).
+- An open color picker reflects external RGB changes and preserves alpha while editing ([#83](https://github.com/yappologistic/CUI/issues/83)).
+- Keyboard focus keeps the wheel labels and ruler scale visible ([#83](https://github.com/yappologistic/CUI/issues/83)).
 - The wheel scrolls a text area before its enclosing scroll view, then reaches the outer view at the text area's edges. Diagonal input can scroll the text vertically and the outer view horizontally ([#58](https://github.com/yappologistic/CUI/issues/58)).
 - Tag input enforces its tag limit for every tag in a batch ([#58](https://github.com/yappologistic/CUI/issues/58)).
 - Pasting a different complete one-time code emits another completion event ([#58](https://github.com/yappologistic/CUI/issues/58)).
@@ -80,6 +116,7 @@ What changed in CUI, newest first. Every component mentioned here runs live in t
 - **macOS: the IME opens at the caret.** The Cocoa view answered `firstRectForCharacterRange` with the view's top-left corner, so the candidate window opened there. It now returns the caret from `set_text_input_rect` and tells the input context when it moves ([#56](https://github.com/yappologistic/CUI/issues/56)).
 - **SDL2: the IME candidate window follows the caret.** The SDL2 backend now implements `cui_platform_iface.set_text_input_rect` (`SDL_SetTextInputRect`) and asks for the system candidate list with `SDL_HINT_IME_SHOW_UI`. Before, the candidate window never moved with the caret ([#56](https://github.com/yappologistic/CUI/issues/56)).
 - **An empty text field showed no caret.** At offset 0 the caret bar stands in the field's padding, left of the text, and the text's clip rectangle cut all of it away: an empty focused field looked dead and never blinked. The bar is now drawn against the field's clip, so it shows and blinks like anywhere else, with or without a placeholder (`tests/test_main.c` covers it).
+- Memory safety: a regex with a `(?: )` group wrote outside its capture array; the histogram slider read a negative bin count or NULL bins; blame read a NULL commit list; a data grid or table cell text before the first row read before the column array; long filters overflowed the kdialog and macOS file dialog commands; growing the state store could lose entries or loop on lookup; a glyph wider than the atlas was drawn past its row and the buffer; the software renderer read before empty textures and wrote past textures on overhanging updates; a reorder list that shrank under a press could move an item never dragged; the Windows file listing ran past a names buffer filled exactly; and the local time offset read unset fields for times out of range (from [#64](https://github.com/yappologistic/CUI/pull/64)).
 
 ## 2026-11-11 · 1.4: instruments
 

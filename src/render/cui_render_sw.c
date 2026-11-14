@@ -76,6 +76,10 @@ static cui_texture cui__sw_tex_create(void *user, int w, int h, cui_texture_form
         slot = r->tex_count++;
     }
     cui__sw_tex *t = &r->tex[slot];
+    if (w < 1 || h < 1) {   /* an empty texture would clamp sample coordinates to -1: make it one blank texel */
+        w = h = 1;
+        pixels = NULL;
+    }
     cui__sw_note_change(r, (cui_texture)(slot + 1), 0, 0, w, h);
     t->w = w; t->h = h; t->fmt = fmt; t->used = true;
     size_t bytes = (size_t)w * (size_t)h * (size_t)fmt;
@@ -92,11 +96,13 @@ static void cui__sw_tex_update(void *user, cui_texture tex, int x, int y, int w,
     cui__sw_tex *t = &r->tex[slot];
     cui__sw_note_change(r, tex, x, y, x + w, y + h);
     int bpp = (int)t->fmt;
+    int cx0 = x < 0 ? 0 : x, cx1 = x + w > t->w ? t->w : x + w;   /* clip to the texture: the rect may hang over an edge */
+    if (cx1 <= cx0) return;
     const uint8_t *src = pixels;
     for (int row = 0; row < h; row++) {
         if (y + row < 0 || y + row >= t->h) continue;
-        memcpy(t->data + ((size_t)(y + row) * (size_t)t->w + (size_t)x) * (size_t)bpp,
-               src + (size_t)row * (size_t)stride, (size_t)w * (size_t)bpp);
+        memcpy(t->data + ((size_t)(y + row) * (size_t)t->w + (size_t)cx0) * (size_t)bpp,
+               src + (size_t)row * (size_t)stride + (size_t)(cx0 - x) * (size_t)bpp, (size_t)(cx1 - cx0) * (size_t)bpp);
     }
 }
 

@@ -738,8 +738,10 @@ void cui_reorder_begin(cui_ctx *ui, const char *id_str, int *order, int count) {
     /* start a drag once the pointer moves a few points */
     if (st->pending && ui->mdown[0] && fabsf(ui->my - st->press_y) > 4 && b->have_rects) {
         st->pending = false;
-        st->from = st->to = st->press_pos;
-        st->grab = st->press_y - b->slot_top[st->from];
+        if (st->press_pos < b->count) {   /* the list may have shrunk since the press */
+            st->from = st->to = st->press_pos;
+            st->grab = st->press_y - b->slot_top[st->from];
+        }
     }
     if (!ui->mdown[0]) st->pending = false;
     if (st->from >= 0 && b->have_rects) {

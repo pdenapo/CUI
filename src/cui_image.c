@@ -13,6 +13,9 @@
 #endif
 #define STB_IMAGE_STATIC
 #define STB_IMAGE_IMPLEMENTATION
+#ifndef STBI_WINDOWS_UTF8
+#define STBI_WINDOWS_UTF8    /* CUI file dialogs and drops supply UTF-8 paths. */
+#endif
 #if defined(__GNUC__) || defined(__clang__)
 /* stb_image declares stbi_load_gif_from_memory even with GIF off; that warning
  * is reported at the end of the file, so it stays silenced for the whole file */
@@ -47,6 +50,7 @@ unsigned char *cui__png_decode(const unsigned char *data, int len, int *w, int *
 }
 void cui__png_free(unsigned char *px) { stbi_image_free(px); }
 
+/** Load an image from the UTF-8 path supplied by the application or window backend. */
 cui_texture cui_image_load(cui_ctx *ui, const char *path, int *w, int *h) {
     int iw = 0, ih = 0, comp = 0;
     unsigned char *px = stbi_load(path, &iw, &ih, &comp, 4);
@@ -60,6 +64,7 @@ cui_texture cui_image_load(cui_ctx *ui, const char *path, int *w, int *h) {
 #else
 unsigned char *cui__png_decode(const unsigned char *data, int len, int *w, int *h) { (void)data; (void)len; (void)w; (void)h; return NULL; }
 void cui__png_free(unsigned char *px) { (void)px; }
+/** Report that loading is unavailable in builds without the bundled decoder. */
 cui_texture cui_image_load(cui_ctx *ui, const char *path, int *w, int *h) {
     (void)ui; (void)path; (void)w; (void)h;
     return 0;

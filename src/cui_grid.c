@@ -72,6 +72,7 @@ static void cui__paint_grid_row(cui_ctx *ui, cui_node *n, void *data) {
 
 typedef struct { float hover; } cui__grid_head_paint;
 
+/** Open the grid and return the visible row range for the current row count. */
 bool cui_data_grid_begin_ex(cui_ctx *ui, const char *id_str, const cui_grid_column *cols, int ncols, int nrows,
                             int *first, int *last, const cui_grid_opts *o) {
     cui_grid_opts d;
@@ -117,13 +118,11 @@ bool cui_data_grid_begin_ex(cui_ctx *ui, const char *id_str, const cui_grid_colu
     total += b->extra;
     b->total_w = total;
     float view_h = ss->view_h > 0 ? ss->view_h : 400;
-    int f = (int)floorf((ss->y - CUI__GRID_HEAD) / b->row_h) - 2;
-    if (f < 0) f = 0;
-    int l = f + (int)ceilf(view_h / b->row_h) + 5;
-    if (l > nrows) l = nrows;
-    if (f > l) f = l;
-    b->first = f; b->last = l;
-    *first = f; *last = l;
+    /* Keep the scroll position in the new row range before choosing which rows to build. */
+    ss->content_h = CUI__GRID_HEAD + nrows * b->row_h;
+    float max_y = CUI_MAX(0, ss->content_h - ss->view_h);
+    ss->y = CUI_MIN(ss->y, max_y);
+    ss->ty = CUI_MIN(ss->ty, max_y);
     if (cursor_set) {
         float top = CUI__GRID_HEAD + st->cursor * b->row_h, bottom = top + b->row_h;
         if (top - CUI__GRID_HEAD < ss->ty) ss->ty = top - CUI__GRID_HEAD;
@@ -179,6 +178,14 @@ bool cui_data_grid_begin_ex(cui_ctx *ui, const char *id_str, const cui_grid_colu
     memset(&sb, 0, sizeof sb);
     sb.width = CUI_FILL; sb.height = CUI_FILL;
     cui__scroll_begin_ex(ui, b->sid, &sb, true);
+    /* Input and reduced motion can change the paint offset in this frame. */
+    int f = (int)floorf((ss->y - CUI__GRID_HEAD) / b->row_h) - 2;
+    if (f < 0) f = 0;
+    int l = f + (int)ceilf(view_h / b->row_h) + 5;
+    if (l > nrows) l = nrows;
+    if (f > l) f = l;
+    b->first = f; b->last = l;
+    *first = f; *last = l;
     int content = cui__node_new(ui, 0);
     ui->nodes[content].w = CUI_PX(total);
     ui->nodes[content].gap = 0;
@@ -392,7 +399,7 @@ void cui_data_grid_cell(cui_ctx *ui) {
 void cui_data_grid_cell_text(cui_ctx *ui, const char *text) {
     cui_data_grid_cell(ui);
     struct cui_grid_build *b = ui->building.grid;
-    bool right = b && b->col - 1 < b->ncols && b->cols[b->col - 1].align == CUI_TEXT_RIGHT;
+    bool right = b && b->col >= 1 && b->col - 1 < b->ncols && b->cols[b->col - 1].align == CUI_TEXT_RIGHT;
     /* single line text: cut short, it shows the whole value on hover */
     cui_text_opts to;
     memset(&to, 0, sizeof to);
@@ -533,6 +540,7 @@ static int cui__popcount(uint32_t v) { int n = 0; while (v) { n += v & 1; v >>= 
 
 typedef struct { uint32_t active; } cui__filter_bar_state;   /* fields shown as chips even with nothing picked */
 
+/** Draw filter chips and open the new chip's value list when a field is added. */
 bool cui_filter_bar(cui_ctx *ui, const char *id_str, const cui_filter_field *fields, int count, uint32_t *selected,
                     char *search, size_t search_cap) {
     if (count > 32) count = 32;
@@ -627,6 +635,7 @@ bool cui_filter_bar(cui_ctx *ui, const char *id_str, const cui_filter_field *fie
     memset(&mo, 0, sizeof mo);
     mo.icon = CUI_ICON_FILTER; mo.variant = CUI_BUTTON_GHOST;
     int avail = 0;
+    int added = -1;
     for (int k = 0; k < count; k++) if (!selected[k] && !(st->active & (1u << k))) avail++;
     if (avail > 0 && cui_menu_begin(ui, "Filter##add", &mo)) {
         for (int k = 0; k < count; k++) {
@@ -637,13 +646,17 @@ bool cui_filter_bar(cui_ctx *ui, const char *id_str, const cui_filter_field *fie
             cui_push_id_int(ui, k);
             if (cui_menu_item_ex(ui, fields[k].name, &io)) {
                 st->active |= 1u << k;
-                /* open the new chip's value list right away */
-                cui_push_id_int(ui, k);
-                cui_pop_id(ui);
+                added = k;
             }
             cui_pop_id(ui);
         }
         cui_menu_end(ui);
+    }
+    if (added >= 0) {
+        /* Leave the add menu's ID scope before resolving the chip's popup. */
+        cui_push_id_int(ui, added);
+        cui__popup_set(ui, cui_make_id(ui, "chip") ^ 0x3E40u, true);
+        cui_pop_id(ui);
     }
     if (avail > 0) ui->nodes[ui->last_node].h = CUI_PX(30);
     bool any = false;

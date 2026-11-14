@@ -1,5 +1,8 @@
 add_executable(cui_tests test_main.c)
 target_link_libraries(cui_tests PRIVATE cui::cui)
+if(WIN32 AND CUI_STB_IMAGE)
+    target_compile_definitions(cui_tests PRIVATE CUI_TEST_WINDOWS_IMAGE_PATH)
+endif()
 add_test(NAME cui_tests COMMAND cui_tests)
 
 add_executable(cui_test_devtools test_devtools.c)

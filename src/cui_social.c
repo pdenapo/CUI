@@ -121,6 +121,7 @@ static void cui__paint_typing(cui_ctx *ui, cui_node *n, void *data) {
     }
 }
 
+/** Draw typing dots that hold still when motion is reduced. */
 void cui_typing_indicator(cui_ctx *ui, const char *name) {
     int row = cui__node_new(ui, 0);
     ui->nodes[row].dir = CUI_ROW; ui->nodes[row].gap = 8; ui->nodes[row].align = CUI_ALIGN_END; ui->nodes[row].pad[0] = 8;
@@ -137,7 +138,9 @@ void cui_typing_indicator(cui_ctx *ui, const char *name) {
     cui__open(ui, bubble);
     int dots = cui__leaf(ui, 0, CUI_PX(28), CUI_PX(12));
     cui__dots_paint *p = cui__frame_alloc(ui, sizeof *p);
-    p->time = ui->time; p->c = CUI_C(ui, TEXT_SECONDARY);
+    bool motion = ui->theme.motion > 0;
+    p->time = motion ? ui->time : 0;
+    p->c = CUI_C(ui, TEXT_SECONDARY);
     ui->nodes[dots].paint = cui__paint_typing;
     ui->nodes[dots].paint_data = p;
     cui__close(ui);
@@ -147,7 +150,7 @@ void cui_typing_indicator(cui_ctx *ui, const char *name) {
         ui->nodes[t].self_align = CUI_ALIGN_CENTER;
     }
     cui__close(ui);
-    ui->animating = true;
+    if (motion) ui->animating = true;
 }
 
 /* ------------------------------------------------------------------------ */

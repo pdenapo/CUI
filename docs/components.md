@@ -526,6 +526,8 @@ cui_gauge(ui, "CPU", 0.42f, 130);
 
 None of these returns anything or takes the pointer. `cui_progress` takes a fraction from 0 to 1, clamped, and glides to a new value. With `indeterminate` the value is ignored and a short segment travels along the track. Options: `label` and `show_value`, which add a row above the bar with the name and a whole percentage, `tone`, `height` in points (6) and `width`. `cui_meter` takes an amount, a limit and a unit as text, prints them as "18.4 / 20 GB", and turns amber above 75% and red above 90% of the limit. `cui_spinner` takes its size in points, and 0 means 20; its `style` option draws it in dots instead (see [Dither spinners](#dither-spinners)) and `color` sets the ring's color. `cui_skeleton` takes a width and a height in points (14 when 0). `cui_gauge` takes a label, a fraction from 0 to 1 and a size in points (140 when 0).
 
+With reduced motion, the plain ring's arc stays visible and still without requesting another frame. Pipeline jobs and the test explorer use this same ring for running items.
+
 With `dither` the bar is drawn in dots on an 8×8 ordered dither: solid up to the value, then thinning out over the 60 points past its edge, the pattern drifting slowly forward so the edge looks alive. Indeterminate, a soft band of dots sweeps the track instead of a segment. The dots take the emphasis color (the accent, or the text color under the neutral accent) unless a `tone` is set, and the default height is 8 points. The drift moves a whole dot at a time and asks for a frame only then, ten times a second; it stops when the bar is empty or full, and reduced motion holds it still and parks the indeterminate band in the middle.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="images/components/dither-progress-dark.png"><img src="images/components/dither-progress.png" alt="Dither progress"></picture>
@@ -657,7 +659,7 @@ cui_table(ui, "orders", cols, 3, .sort = &sort, .selectable = true, .height = CU
 
 Cells hold any components. Clicking a sortable header updates `sort` (column and direction); you sort your data. With `height` the body scrolls under a fixed header. When the container is narrower than the fixed columns plus 96 points for each flexible one, the table scrolls sideways instead of squeezing cells. Options: `sort`, `height`, `striped`, `compact`, `selectable`.
 
-Keyboard: Tab reaches the headers of sortable columns, and Enter or Space sorts by the focused one. Rows are selected with the pointer; for arrow keys through rows use the [data grid](#data-grid-and-filter-bar).
+Keyboard: Tab reaches sortable headers and selectable rows, with a ring on the focused item. Enter or Space sorts by the focused header. For arrow keys through rows use the [data grid](components-more.md#data-grid-and-filter-bar).
 
 ## List and tree
 
@@ -744,7 +746,7 @@ cui_image_destroy(ui, tex);
 
 `cui_image_load` returns a `cui_texture`, or 0 when the file cannot be read or decoded. Call it once, not on every frame, keep the texture for as long as you draw it, and free it with `cui_image_destroy`. `cui_image_create` takes `w * h` pixels of four bytes each, red, green, blue and alpha, and copies them. `cui_image` returns nothing and stretches the texture over the box given by `width` and `height`, 64 by 64 points when they are not set, so work the height out from the pixel size to keep the proportions.
 
-PNG and JPEG are decoded out of the box. Configure with `-DCUI_IMAGE_ALL_FORMATS=ON` to add BMP, GIF and TGA, or `-DCUI_STB_IMAGE=OFF` to leave decoding out and upload your own pixels with `cui_image_create`.
+PNG and JPEG are decoded out of the box. Image paths are UTF-8, including on Windows. Configure with `-DCUI_IMAGE_ALL_FORMATS=ON` to add BMP, GIF and TGA, or `-DCUI_STB_IMAGE=OFF` to leave decoding out and upload your own pixels with `cui_image_create`.
 
 ## Radio cards
 

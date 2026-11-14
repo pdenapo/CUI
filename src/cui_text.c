@@ -723,6 +723,11 @@ static void cui__atlas_grow(cui_ctx *ui) {
 static bool cui__atlas_pack(cui_ctx *ui, int w, int h, int *ox, int *oy) {
     for (;;) {
         if (ui->pack_x + w + 1 > ui->atlas_w) { ui->pack_x = 1; ui->pack_y += ui->pack_row_h + 1; ui->pack_row_h = 0; }
+        if (ui->pack_x + w + 1 > ui->atlas_w) {   /* wider than a whole row: grow, or it would spill past the row end */
+            if (ui->atlas_w >= CUI_ATLAS_MAX) return false;
+            cui__atlas_grow(ui);
+            continue;
+        }
         if (ui->pack_y + h + 1 <= ui->atlas_h) break;
         if (ui->atlas_w >= CUI_ATLAS_MAX) return false;
         cui__atlas_grow(ui);
@@ -751,6 +756,7 @@ static cui_glyph *cui__glyph_get(cui_ctx *ui, cui_font font, int gi, float px_si
     int x0, y0, x1, y1;
     stbtt_GetGlyphBitmapBoxSubpixel(&fd->info, gi, scale, scale, shift, 0, &x0, &y0, &x1, &y1);
     int w = x1 - x0, hgt = y1 - y0;
+    if (w > CUI_ATLAS_MAX - 2 || hgt > CUI_ATLAS_MAX - 2) return NULL;   /* can never fit, so no atlas reset either */
     int ax = 0, ay = 0;
     if (w > 0 && hgt > 0) {
         if (!cui__atlas_pack(ui, w, hgt, &ax, &ay)) { ui->atlas_reset_pending = true; return NULL; }
@@ -793,16 +799,18 @@ static int cui__glyph_ord_cmp(const void *a, const void *b) {
 static void cui__atlas_compact(cui_ctx *ui) {
     uint32_t now = (uint32_t)ui->frame;
     size_t area = 0;
-    int live = 0;
+    int live = 0, maxw = 0;
     for (int i = 0; i < ui->glyph_count; i++) {
         cui_glyph *g = &ui->glyphs[i];
         if (now - g->stamp > CUI__ATLAS_KEEP) continue;
         area += (size_t)(g->w + 1) * (size_t)(g->h + 1);
+        if (g->w > maxw) maxw = g->w;
         live++;
     }
     int nw = ui->atlas_w;
     while (nw > CUI_ATLAS_MIN && area * 2 <= (size_t)(nw / 2) * (size_t)(nw / 2)) nw /= 2;
-    if (nw == ui->atlas_w) return;
+    while (nw < maxw + 2) nw *= 2;   /* the widest glyph kept must fit in a row */
+    if (nw >= ui->atlas_w) return;
     cui__glyph_ord *ord = cui__alloc(ui, sizeof *ord * (size_t)CUI_MAX(live, 1));
     cui_glyph *ng = cui__alloc(ui, sizeof *ng * (size_t)CUI_MAX(live, 1));
     uint8_t *na = cui__alloc(ui, (size_t)nw * (size_t)nw);

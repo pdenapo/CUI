@@ -302,6 +302,7 @@ static void cui__paint_dot_chart(cui_ctx *ui, cui_node *nd, void *data) {
     if (p->focus > 0.01f) cui__draw_focus_ring(ui, (cui_rect){ plot.x - 4, plot.y - 4, plot.w + 8, plot.h + 8 }, CUI_CORNERS(6), p->focus);
 }
 
+/** Draw a dot chart and report activation at the current sample or pointer position. */
 cui_dot_chart_result cui_dot_chart_ex(cui_ctx *ui, const char *id_str, const cui_dot_series *series, int series_count, int count, const cui_dot_chart_opts *o) {
     cui_dot_chart_opts d;
     memset(&d, 0, sizeof d);
@@ -344,6 +345,10 @@ cui_dot_chart_result cui_dot_chart_ex(cui_ctx *ui, const char *id_str, const cui
             cursor = (int)lround(t * (count - 1));
             st->keyed = false;
         } else if (st->keyed) cursor = CUI_CLAMP(st->cursor, 0, count - 1);
+        if (r.keyboard_activate && cursor < 0) {
+            st->keyed = true;
+            st->cursor = cursor = count / 2;
+        }
     }
     /* copies of the data, for the paint callback, and the value range */
     cui__dm_paint *p = cui__frame_alloc(ui, sizeof *p);

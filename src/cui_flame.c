@@ -215,12 +215,13 @@ static void cui__fl_bar(cui_ctx *ui, const cui__fl_paint *p, const cui__fl_item 
     }
 }
 
+/** Paint the graph and register wheel input only when it is interactive. */
 static void cui__paint_flame(cui_ctx *ui, cui_node *n, void *data) {
     cui__fl_paint *p = data;
     cui__fl_state *st = p->st;
     cui_rect r = n->rect;
     /* the wheel goes to the graph while the pointer is over its visible part */
-    {
+    if (p->sid) {
         cui_rect clip = ui->dl.clip_stack[ui->dl.clip_depth - 1];
         float s = ui->scale;
         cui_rect cp = { clip.x / s, clip.y / s, clip.w / s, clip.h / s };
@@ -546,19 +547,24 @@ static void cui__flf_keys(cui__flf *f) {
     }
 }
 
-/* the view: glides to a zoom's target, or stays inside the data */
-static void cui__flf_move_view(cui__flf *f) {
+/** Keep the view inside the data and advance zoom animations when enabled. */
+static void cui__flf_move_view(cui__flf *f, bool animate) {
     cui__fl_state *st = f->st;
     cui_flame_view *v = f->v;
     if (f->user_moved) st->anim_on = false;
-    if (st->anim_on) {
+    if (animate && st->anim_on) {
         float pr = cui__spring(f->ui, &st->anim, 1.0f, CUI__SPRING_EXPAND);
         double s0, s1;
         cui__fl_lerp(st, pr >= 1.0f ? 1.0 : (double)pr, &s0, &s1);
         v->start = s0; v->end = s1;
         if (pr >= 1.0f && st->anim.v == 0) { v->start = st->b0; v->end = st->b1; st->anim_on = false; }
     } else {
+        double start = v->start, end = v->end;
         cui__fl_clamp(&f->c, v, f->min_range);
+        /* A paused zoom must not restore bounds from an older dataset. */
+        if (st->anim_on && (v->start != start || v->end != end ||
+                            st->a0 < f->c.dmin || st->a1 > f->c.dmax ||
+                            st->b0 < f->c.dmin || st->b1 > f->c.dmax)) st->anim_on = false;
     }
     cui__fl_clamp_scroll(&f->c, v);
 }
@@ -580,7 +586,7 @@ static cui__fl_paint *cui__flf_build_panel(cui__flf *f, int *node) {
     cui__mark_interactive(ui, en, CUI_IF_FOCUSABLE);
     cui__fl_paint *p = cui__frame_alloc(ui, sizeof *p);
     memset(p, 0, sizeof *p);
-    p->st = f->st; p->sid = f->sid;
+    p->st = f->st; p->sid = cui_is_disabled(ui) ? 0 : f->sid;
     p->t0 = f->v->start; p->t1 = f->v->end; p->origin = f->c.dmin;
     p->row_h = f->c.row_h; p->scroll = f->v->scroll; p->content_h = f->c.rows * f->c.row_h;
     p->empty = !f->has_data;
@@ -724,13 +730,17 @@ cui_flame_result cui_flame_graph_ex(cui_ctx *ui, const char *id_str, const cui_f
     f.mx = ui->mx; f.my = ui->my;
 
     /* input */
-    if (f.has_data && f.has_rect) {
+    bool disabled = cui_is_disabled(ui);
+    if (disabled) st->mode = FL_IDLE;
+    if (f.has_data && f.has_rect && !disabled) {
         f.range = v->end - v->start;
         cui__flf_wheel(&f);
         cui__flf_pointer(&f);
         if (f.bi.focused && !ui->edit_prev) cui__flf_keys(&f);
-        cui__flf_move_view(&f);
-    } else if (!f.has_data) {
+    }
+    if (f.has_data) {
+        if (disabled || f.has_rect) cui__flf_move_view(&f, !disabled);
+    } else {
         st->mode = FL_IDLE;
         st->anim_on = false;
         if (*sel != -1) *sel = -1;
@@ -1682,6 +1692,7 @@ static void cui__trf_tooltip(cui__trf *f) {
     cui__tooltip_passive(ui, tid, tip);
 }
 
+/** Draw the trace and report changes to its range, scroll position, or measurement. */
 cui_trace_result cui_trace_view_ex(cui_ctx *ui, const char *id_str, cui_trace_track *tracks, int track_count,
                                    const cui_trace_span *spans, int span_count, cui_trace_view *view, int *selected, const cui_trace_opts *o) {
     cui_trace_opts d;
@@ -1717,6 +1728,7 @@ cui_trace_result cui_trace_view_ex(cui_ctx *ui, const char *id_str, cui_trace_tr
     c->body_h = f.has_rect ? CUI_MAX(1.0f, f.R.h - head - 2 - 2 * CUI__FL_PADY) : 200;
 
     double b0 = v->start, b1 = v->end;
+    double mark0 = v->mark_start, mark1 = v->mark_end;
     float bs = v->scroll;
     if (!(v->end > v->start) || !isfinite(v->start) || !isfinite(v->end)) { v->start = c->dmin; v->end = c->dmax; st->fl.anim_on = false; }
     f.bi = cui__interact(ui, f.id, CUI_IF_FOCUSABLE | CUI_IF_DRAG);
@@ -1735,7 +1747,8 @@ cui_trace_result cui_trace_view_ex(cui_ctx *ui, const char *id_str, cui_trace_tr
     if (f.hov >= 0 && c->tracks[c->s[f.hov].track].collapsed && c->s[f.hov].depth > 0) f.hov = -1;
     res.hovered = f.hov;
     res.selection_changed = *sel != sel_before;
-    res.view_changed = v->start != b0 || v->end != b1 || v->scroll != bs;
+    res.view_changed = v->start != b0 || v->end != b1 || v->scroll != bs ||
+                       v->mark_start != mark0 || v->mark_end != mark1;
 
     int en;
     cui__tr_paint *p;

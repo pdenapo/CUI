@@ -259,11 +259,12 @@ static void cui__tl_vline(cui_ctx *ui, cui_rect pr, float rad, float x, float y0
     if (bot > y0) cui_draw_rect(ui, (cui_rect){ x, y0, w, bot - y0 }, CUI_CORNERS(0), c);
 }
 
+/** Paint the timeline and register wheel input only when it is interactive. */
 static void cui__paint_timeline(cui_ctx *ui, cui_node *n, void *data) {
     cui__tl_paint *p = data;
     cui_rect r = n->rect;
     /* the wheel goes to the editor while the pointer is over its visible part */
-    {
+    if (p->sid) {
         cui_rect clip = ui->dl.clip_stack[ui->dl.clip_depth - 1];
         float s = ui->scale;
         cui_rect cp = { clip.x / s, clip.y / s, clip.w / s, clip.h / s };
@@ -1164,7 +1165,7 @@ static cui__tl_paint *cui__tle_build_panel(cui__tle_frame *f, int *node) {
     cui__mark_interactive(ui, en, CUI_IF_FOCUSABLE);
     cui__tl_paint *p = cui__frame_alloc(ui, sizeof *p);
     memset(p, 0, sizeof *p);
-    p->st = f->st; p->sid = f->sid;
+    p->st = f->st; p->sid = cui_is_disabled(ui) ? 0 : f->sid;
     p->v0 = v->start; p->v1 = v->end; p->scroll = v->scroll;
     p->row_h = f->row_h; p->track_w = o->track_width; p->toggles = o->toggles;
     p->seq0 = f->s0; p->seq1 = f->s1; p->fps = f->fps; p->ruler = f->ruler;
@@ -1405,7 +1406,8 @@ cui_timeline_editor_result cui_timeline_editor_ex(cui_ctx *ui, const char *id_st
     f.k = (double)f.g.plot_w / (double)(v->end - v->start);
 
     /* input */
-    if (f.has_rect) {
+    if (cui_is_disabled(ui)) st->mode = TL_IDLE;
+    if (f.has_rect && !cui_is_disabled(ui)) {
         cui__tle_wheel_and_pan(&f);
         f.k = (double)f.g.plot_w / (double)(v->end - v->start);
         if (f.bi.hovered && ui->mpressed[CUI_MOUSE_LEFT] && st->mode == TL_IDLE) cui__tle_press(&f);

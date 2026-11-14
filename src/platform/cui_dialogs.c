@@ -170,13 +170,16 @@ static bool cui__posix_file_dialog(const cui_file_dialog_opts *o, char *out, siz
         char types[300] = "";
         if (o->filter && *o->filter) {
             size_t k = (size_t)snprintf(types, sizeof types, " of type {");
-            for (const char *p = o->filter; *p && k + 8 < sizeof types;) {
+            for (const char *p = o->filter; *p;) {
                 const char *e = strchr(p, ';');
                 size_t l = e ? (size_t)(e - p) : strlen(p);
+                /* the separator, the quoted name, the closing brace and the terminator must all fit */
+                size_t need = (p == o->filter ? 0 : 2) + 1 + l + 1 + 1 + 1;
+                if (k + need > sizeof types) { types[0] = 0; break; }   /* omit the filter rather than send a broken script */
                 k += (size_t)snprintf(types + k, sizeof types - k, "%s\"%.*s\"", p == o->filter ? "" : ", ", (int)l, p);
                 p = e ? e + 1 : p + l;
             }
-            snprintf(types + k, sizeof types - k, "}");
+            if (types[0]) snprintf(types + k, sizeof types - k, "}");
         }
         snprintf(script, sizeof script, "POSIX path of (choose file with prompt \"%s\"%s)", title, types);
     }
@@ -221,6 +224,7 @@ static bool cui__posix_file_dialog(const cui_file_dialog_opts *o, char *out, siz
                 k += (size_t)snprintf(spec + k, sizeof spec - k, "%s*.%.*s", k ? " " : "", (int)l, p);
                 p = e ? e + 1 : p + l;
             }
+            if (k >= sizeof spec) k = sizeof spec - 1;   /* snprintf returns the length it wanted, which can pass the end */
             snprintf(spec + k, sizeof spec - k, "|%s", o->filter_name ? o->filter_name : "Files");
             cui__shell_quote(filter, sizeof filter, spec);
         }

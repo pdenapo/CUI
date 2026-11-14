@@ -123,6 +123,15 @@ static void test_dot_chart(void) {
     move(ui, build_dots, &c, 2, 2);
     CHECK_EQ(c.r.hovered, -1);
     key(ui, build_dots, &c, CUI_KEY_TAB, 0);
+    int clicks_before_keyboard = c.clicks;
+    key(ui, build_dots, &c, CUI_KEY_ENTER, 0);
+    CHECK_EQ(c.clicks, clicks_before_keyboard + 1);
+    CHECK_EQ(c.r.hovered, 24);
+    CHECK_NEAR(c.r.x, 18.0, 1e-9);
+    CHECK_NEAR(c.r.value, 34, 1e-4);
+    run(ui, build_dots, &c, 1);
+    CHECK_EQ(c.r.hovered, 24);                    /* keep the activated sample visible */
+    CHECK_EQ(c.clicks, clicks_before_keyboard + 1);
     key(ui, build_dots, &c, CUI_KEY_RIGHT, 0);
     CHECK_EQ(c.r.hovered, 25);                    /* from the middle, one to the right */
     key(ui, build_dots, &c, CUI_KEY_RIGHT, CUI_MOD_SHIFT);
@@ -140,6 +149,10 @@ static void test_dot_chart(void) {
     CHECK_NEAR(c.last_click, 6, 1e-9);            /* Enter clicks at the cursor */
     key(ui, build_dots, &c, CUI_KEY_ESCAPE, 0);
     CHECK_EQ(c.r.hovered, -1);
+    key(ui, build_dots, &c, CUI_KEY_SPACE, 0);
+    CHECK(c.r.clicked);
+    run(ui, build_dots, &c, 1);
+    CHECK_EQ(c.r.hovered, 24);
     /* bad values count as zero; NaN and infinity do not spoil the scale */
     c.a[10] = NAN; c.a[11] = -50; c.a[12] = INFINITY;
     c.o.min = c.o.max = 0;
